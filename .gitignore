@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Env files (contain secrets)
+.env
+.env*.local
+
+# Native build artifacts
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+.kotlin/
+
+# Metro
+.metro-health-check*
+
+# Debug logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# TypeScript
+*.tsbuildinfo
+
+# OS files
+.DS_Store
+desktop.ini
+Thumbs.db
+
+# Android build cache
+react/Runner/android/.gradle/
+react/Runner/android/build/
+
+# IDE
+.vscode/
+.idea/
