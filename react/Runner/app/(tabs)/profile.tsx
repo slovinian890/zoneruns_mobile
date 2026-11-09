@@ -1,11 +1,18 @@
-import { StyleSheet, View, TextInput, TouchableOpacity, Alert, ScrollView, Animated } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, Alert, ScrollView, Animated } from 'react-native';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors, Spacing, BorderRadius, CleanPaceColors } from '@/constants/theme';
+import { useAmbientVariant } from '@/components/ambient-background';
+import { Button } from '@/components/ui/button';
+import { GlassCard } from '@/components/ui/glass-card';
+import { Input } from '@/components/ui/input';
+import { ScreenHeader } from '@/components/ui/screen-header';
+import { StatBlock } from '@/components/ui/stat-block';
+import { TAB_BAR_HEIGHT } from '@/components/ui/floating-tab-bar';
+import { AuroraColors, Spacing } from '@/constants/theme';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { getCurrentProfile, updateProfile, uploadAvatar } from '@/services/profileService';
@@ -13,11 +20,11 @@ import { getCurrentUserStats } from '@/services/statsService';
 import { signOut } from '@/services/authService';
 import { Profile, UserStats } from '@/services/supabase';
 import { TRAIL_COLORS, getTrailColor, setTrailColor as shraniBarvoSledi, DEFAULT_TRAIL_COLOR } from '@/services/trailColorService';
+import { getMyTerritoryStats, formatArea } from '@/services/territoryService';
 
 export default function ProfileScreen() {
-  const barvnaShema = useColorScheme();
-  const barve = Colors[barvnaShema ?? 'light'];
-  const [profil, setProfil] = useState<Profile | null>(null);
+  useAmbientVariant('default');
+  const insets = useSafeAreaInsets();
   const [statistika, setStatistika] = useState<UserStats | null>(null);
   const [uporabniskoIme, setUporabniskoIme] = useState('');
   const [prikaznoIme, setPrikaznoIme] = useState('');
@@ -27,8 +34,9 @@ export default function ProfileScreen() {
   const [nalaganje, setNalaganje] = useState(true);
   const [shranjevanje, setShranjevanje] = useState(false);
   const [izbranaBarvaSled, setIzbranaBarvaSled] = useState(DEFAULT_TRAIL_COLOR);
+  const [povrsinaOzemlja, setPovrsinaOzemlja] = useState(0);
   const usmerjevalnik = useRouter();
-  
+
   // Animacija dihanja za profilno sliko
   const dihalniPulz = useRef(new Animated.Value(1)).current;
 
@@ -54,6 +62,7 @@ export default function ProfileScreen() {
       naloziProfil();
       naloziStatistiko();
       getTrailColor().then(setIzbranaBarvaSled);
+      getMyTerritoryStats().then((s) => setPovrsinaOzemlja(s.areaM2));
     }, [])
   );
 
@@ -61,12 +70,18 @@ export default function ProfileScreen() {
     try {
       const rezultat = await getCurrentProfile();
       if (rezultat.success && rezultat.profile) {
-        setProfil(rezultat.profile);
         setUporabniskoIme(rezultat.profile.username);
         setPrikaznoIme(rezultat.profile.display_name || '');
         setOpis(rezultat.profile.bio || '');
         setLokacija(rezultat.profile.location || '');
         setSlikaProfilaUrl(rezultat.profile.avatar_url);
+
+        // Strežnik je vir resnice za barvo sledi (vidna drugim pri ozemljih) –
+        // uskladi lokalni predpomnilnik, če se razlikuje.
+        if (rezultat.profile.trail_color) {
+          setIzbranaBarvaSled(rezultat.profile.trail_color);
+          shraniBarvoSledi(rezultat.profile.trail_color);
+        }
       }
     } catch (napaka) {
       console.error('Napaka pri nalaganju profila:', napaka);
@@ -178,7 +193,6 @@ export default function ProfileScreen() {
     setShranjevanje(false);
 
     if (rezultat.success) {
-      setProfil(rezultat.profile!);
       Alert.alert('Uspeh', 'Profil posodobljen!');
     } else {
       Alert.alert('Napaka', rezultat.error || 'Posodabljanje profila ni uspelo');
@@ -215,125 +229,76 @@ export default function ProfileScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <View style={[styles.header, { 
-        backgroundColor: barvnaShema === 'dark' ? barve.card : barve.backgroundSecondary,
-        borderBottomWidth: 1,
-        borderBottomColor: barve.border,
-      }]}>
-        <ThemedText type="h3">Profil</ThemedText>
-      </View>
+      <ScreenHeader title="Profil" />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={{ paddingBottom: TAB_BAR_HEIGHT + insets.bottom + Spacing.lg }}
+        showsVerticalScrollIndicator={false}>
         <View style={styles.profileSection}>
           <TouchableOpacity onPress={prikaziIzbirnikSlik} style={styles.imageContainer} activeOpacity={0.7} disabled={shranjevanje}>
-            <Animated.View 
+            <Animated.View
               style={[
                 styles.breathingRing,
                 {
-                  backgroundColor: CleanPaceColors.frostBlue,
+                  backgroundColor: AuroraColors.primarySoft,
                   transform: [{ scale: dihalniPulz }],
                 }
-              ]} 
+              ]}
             />
             {slikaProfilaUrl ? (
               <Image source={{ uri: slikaProfilaUrl }} style={styles.profileImage} />
             ) : (
-              <View style={[styles.profileImagePlaceholder, { backgroundColor: barve.backgroundSecondary }]}>
-                <IconSymbol name="person.fill" size={48} color={barve.primary} />
+              <View style={styles.profileImagePlaceholder}>
+                <IconSymbol name="person.fill" size={48} color={AuroraColors.primary} />
               </View>
             )}
-            <View style={[styles.editBadge, { 
-              backgroundColor: barve.primary,
-              borderColor: barvnaShema === 'dark' ? barve.card : barve.background,
-            }]}>
-              <IconSymbol name="camera.fill" size={16} color={CleanPaceColors.offWhite} />
+            <View style={styles.editBadge}>
+              <IconSymbol name="camera.fill" size={16} color={AuroraColors.onPrimary} />
             </View>
           </TouchableOpacity>
 
           <View style={styles.inputContainer}>
             <ThemedText type="bodyBold" style={styles.label}>Uporabniško ime</ThemedText>
-            <TextInput
-              style={[styles.input, { 
-                backgroundColor: barvnaShema === 'dark' ? barve.card : barve.background,
-                borderColor: barve.border,
-                color: barve.text,
-              }]}
-              value={uporabniskoIme}
-              onChangeText={setUporabniskoIme}
-              placeholder="Vnesite uporabniško ime"
-              placeholderTextColor={barve.textMuted}
-              editable={!shranjevanje}
-            />
+            <Input value={uporabniskoIme} onChangeText={setUporabniskoIme} placeholder="Vnesite uporabniško ime" editable={!shranjevanje} />
           </View>
 
           <View style={styles.inputContainer}>
             <ThemedText type="bodyBold" style={styles.label}>Prikazno ime</ThemedText>
-            <TextInput
-              style={[styles.input, { 
-                backgroundColor: barvnaShema === 'dark' ? barve.card : barve.background,
-                borderColor: barve.border,
-                color: barve.text,
-              }]}
-              value={prikaznoIme}
-              onChangeText={setPrikaznoIme}
-              placeholder="Vnesite prikazno ime"
-              placeholderTextColor={barve.textMuted}
-              editable={!shranjevanje}
-            />
+            <Input value={prikaznoIme} onChangeText={setPrikaznoIme} placeholder="Vnesite prikazno ime" editable={!shranjevanje} />
           </View>
 
           <View style={styles.inputContainer}>
             <ThemedText type="bodyBold" style={styles.label}>Opis</ThemedText>
-            <TextInput
-              style={[styles.input, styles.bioInput, { 
-                backgroundColor: barvnaShema === 'dark' ? barve.card : barve.background,
-                borderColor: barve.border,
-                color: barve.text,
-              }]}
-              value={opis}
-              onChangeText={setOpis}
-              placeholder="Povejte nam o sebi"
-              placeholderTextColor={barve.textMuted}
-              multiline
-              numberOfLines={3}
-              editable={!shranjevanje}
-            />
+            <Input value={opis} onChangeText={setOpis} placeholder="Povejte nam o sebi" multiline editable={!shranjevanje} />
           </View>
 
           <View style={styles.inputContainer}>
             <View style={styles.labelWithIcon}>
-              <IconSymbol name="location.fill" size={16} color={barve.icon} />
+              <IconSymbol name="location.fill" size={16} color={AuroraColors.textMuted} />
               <ThemedText type="bodyBold" style={styles.label}>Lokacija</ThemedText>
             </View>
-            <TextInput
-              style={[styles.input, { 
-                backgroundColor: barvnaShema === 'dark' ? barve.card : barve.background,
-                borderColor: barve.border,
-                color: barve.text,
-              }]}
+            <Input
               value={lokacija}
               onChangeText={setLokacija}
               placeholder="Vnesite svojo lokacijo (npr. Ljubljana, Slovenija)"
-              placeholderTextColor={barve.textMuted}
               editable={!shranjevanje}
             />
           </View>
 
-          <TouchableOpacity
-            style={[styles.saveButton, { backgroundColor: barve.primary }, shranjevanje && { opacity: 0.6 }]}
+          <Button
+            label={shranjevanje ? 'Shranjevanje...' : 'Shrani profil'}
             onPress={shraniProfil}
-            activeOpacity={0.7}
-            disabled={shranjevanje}>
-            <ThemedText type="bodyBold" lightColor={CleanPaceColors.offWhite} darkColor={CleanPaceColors.offWhite}>
-              {shranjevanje ? 'Shranjevanje...' : 'Shrani profil'}
-            </ThemedText>
-          </TouchableOpacity>
+            disabled={shranjevanje}
+            loading={shranjevanje}
+            style={styles.saveButton}
+          />
         </View>
 
         {/* ── Izbirnik barve sledi ── */}
         <View style={styles.trailColorSection}>
           <View style={styles.trailColorHeader}>
-            <IconSymbol name="paintbrush.fill" size={18} color={barve.primary} />
+            <IconSymbol name="paintbrush.fill" size={18} color={AuroraColors.primary} />
             <ThemedText type="h3" style={{ marginLeft: Spacing.xs }}>Barva sledi</ThemedText>
           </View>
           <ThemedText type="bodySmall" variant="muted" style={{ marginBottom: Spacing.md }}>
@@ -347,28 +312,25 @@ export default function ProfileScreen() {
                 onPress={() => {
                   setIzbranaBarvaSled(bs.hex);
                   shraniBarvoSledi(bs.hex);
+                  updateProfile({ trail_color: bs.hex });
                 }}
                 style={[
                   styles.colorSwatch,
                   { backgroundColor: bs.hex },
-                  izbranaBarvaSled === bs.hex && {
-                    borderWidth: 3,
-                    borderColor: barvnaShema === 'dark' ? CleanPaceColors.offWhite : CleanPaceColors.charcoal,
-                    transform: [{ scale: 1.15 }],
-                  },
+                  izbranaBarvaSled === bs.hex && styles.colorSwatchSelected,
                 ]}
               >
                 {izbranaBarvaSled === bs.hex && (
-                  <IconSymbol name="checkmark" size={16} color="#FFFFFF" />
+                  <IconSymbol name="checkmark" size={16} color={AuroraColors.text} />
                 )}
               </TouchableOpacity>
             ))}
           </View>
           {/* Predogled sledi */}
           <View style={styles.trailPreview}>
-            <View style={[styles.trailPreviewDot, { backgroundColor: '#4CAF50' }]} />
+            <View style={[styles.trailPreviewDot, { backgroundColor: AuroraColors.success }]} />
             <View style={[styles.trailPreviewLine, { backgroundColor: izbranaBarvaSled }]} />
-            <View style={[styles.trailPreviewDot, { backgroundColor: '#F44336' }]} />
+            <View style={[styles.trailPreviewDot, { backgroundColor: AuroraColors.danger }]} />
           </View>
           <ThemedText type="caption" variant="muted" style={{ textAlign: 'center' }}>
             {TRAIL_COLORS.find((bs) => bs.hex === izbranaBarvaSled)?.name ?? 'Po meri'}
@@ -377,52 +339,46 @@ export default function ProfileScreen() {
 
         <View style={styles.statsSection}>
           <ThemedText type="h3" style={styles.sectionTitle}>Vaša statistika</ThemedText>
-          <View style={styles.statsGrid}>
-            <View style={[styles.statCard, { 
-              backgroundColor: barvnaShema === 'dark' ? barve.card : barve.backgroundSecondary,
-              borderWidth: 1,
-              borderColor: barve.border,
-            }]}>
-              <ThemedText type="h2" variant="primary">{statistika?.total_runs ?? 0}</ThemedText>
-              <ThemedText type="bodySmall" variant="muted">Skupaj tekov</ThemedText>
-            </View>
-            <View style={[styles.statCard, { 
-              backgroundColor: barvnaShema === 'dark' ? barve.card : barve.backgroundSecondary,
-              borderWidth: 1,
-              borderColor: barve.border,
-            }]}>
-              <ThemedText type="h2" variant="primary">{statistika?.total_distance_km?.toFixed(1) ?? '0.0'}</ThemedText>
-              <ThemedText type="bodySmall" variant="muted">Skupna razdalja (km)</ThemedText>
-            </View>
-          </View>
-          <View style={styles.statsGrid}>
-            <View style={[styles.statCard, { 
-              backgroundColor: barvnaShema === 'dark' ? barve.card : barve.backgroundSecondary,
-              borderWidth: 1,
-              borderColor: barve.border,
-            }]}>
-              <ThemedText type="h2" variant="primary">{statistika?.current_streak ?? 0}</ThemedText>
-              <ThemedText type="bodySmall" variant="muted">Trenutni niz</ThemedText>
-            </View>
-            <View style={[styles.statCard, { 
-              backgroundColor: barvnaShema === 'dark' ? barve.card : barve.backgroundSecondary,
-              borderWidth: 1,
-              borderColor: barve.border,
-            }]}>
-              <ThemedText type="h2" variant="primary">{statistika?.best_pace ?? '--'}</ThemedText>
-              <ThemedText type="bodySmall" variant="muted">Najboljši tempo</ThemedText>
-            </View>
-          </View>
+          <GlassCard style={styles.statsCard}>
+            <StatBlock
+              stats={[
+                { value: String(statistika?.total_runs ?? 0), label: 'Skupaj tekov' },
+                { value: statistika?.total_distance_km?.toFixed(1) ?? '0.0', label: 'Razdalja (km)' },
+              ]}
+            />
+            <View style={styles.statsRowGap} />
+            <StatBlock
+              stats={[
+                { value: String(statistika?.current_streak ?? 0), label: 'Trenutni niz' },
+                { value: statistika?.best_pace ?? '--', label: 'Najboljši tempo' },
+              ]}
+            />
+          </GlassCard>
 
-          <TouchableOpacity
-            style={[styles.logoutButton, { 
-              borderColor: barve.border,
-              borderWidth: 1,
-            }]}
-            onPress={obdelajOdjavo}
-            activeOpacity={0.7}>
-            <IconSymbol name="arrow.right.square.fill" size={20} color={barve.primary} />
-            <ThemedText type="bodyBold" variant="primary">
+          <GlassCard style={styles.territoryCardWrap}>
+            <View style={styles.territoryCard}>
+              <IconSymbol name="hexagon.fill" size={22} color={AuroraColors.primary} />
+              <View style={{ flex: 1 }}>
+                <ThemedText type="h3" variant="primary">{formatArea(povrsinaOzemlja)}</ThemedText>
+                <ThemedText type="bodySmall" variant="muted">Zaseženo ozemlje</ThemedText>
+              </View>
+            </View>
+          </GlassCard>
+
+          <GlassCard onPress={() => usmerjevalnik.push('/groups')} style={styles.territoryCardWrap}>
+            <View style={styles.territoryCard}>
+              <IconSymbol name="person.2.fill" size={22} color={AuroraColors.primary} />
+              <View style={{ flex: 1 }}>
+                <ThemedText type="h3" variant="primary">Skupine</ThemedText>
+                <ThemedText type="bodySmall" variant="muted">Tekmuj v ekipi s prijatelji</ThemedText>
+              </View>
+              <IconSymbol name="chevron.right" size={18} color={AuroraColors.textFaint} />
+            </View>
+          </GlassCard>
+
+          <TouchableOpacity style={styles.logoutButton} onPress={obdelajOdjavo} activeOpacity={0.7}>
+            <IconSymbol name="arrow.right.square.fill" size={20} color={AuroraColors.danger} />
+            <ThemedText type="bodyBold" lightColor={AuroraColors.danger} darkColor={AuroraColors.danger}>
               Odjava
             </ThemedText>
           </TouchableOpacity>
@@ -435,16 +391,12 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: 'transparent',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  header: {
-    paddingTop: 60,
-    paddingBottom: Spacing.md,
-    paddingHorizontal: Spacing.md,
   },
   content: {
     flex: 1,
@@ -467,14 +419,13 @@ const styles = StyleSheet.create({
     width: 130,
     height: 130,
     borderRadius: 65,
-    opacity: 0.2,
   },
   profileImage: {
     width: 110,
     height: 110,
     borderRadius: 55,
-    borderWidth: 3,
-    borderColor: CleanPaceColors.offWhite,
+    borderWidth: 2,
+    borderColor: AuroraColors.primary,
   },
   profileImagePlaceholder: {
     width: 110,
@@ -482,8 +433,9 @@ const styles = StyleSheet.create({
     borderRadius: 55,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 3,
-    borderColor: CleanPaceColors.offWhite,
+    borderWidth: 2,
+    borderColor: AuroraColors.primary,
+    backgroundColor: AuroraColors.surfaceSolid,
   },
   editBadge: {
     position: 'absolute',
@@ -495,6 +447,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
+    borderColor: AuroraColors.bg,
+    backgroundColor: AuroraColors.primary,
   },
   inputContainer: {
     width: '100%',
@@ -509,22 +463,9 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
     marginBottom: Spacing.sm,
   },
-  input: {
-    borderWidth: 1,
-    borderRadius: BorderRadius.card,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.md,
-    fontSize: 16,
-  },
-  bioInput: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
   saveButton: {
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl,
-    borderRadius: BorderRadius.card,
     marginTop: Spacing.sm,
+    width: '100%',
   },
   statsSection: {
     marginTop: Spacing.md,
@@ -532,16 +473,19 @@ const styles = StyleSheet.create({
   sectionTitle: {
     marginBottom: Spacing.md,
   },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: Spacing.md,
+  statsCard: {
     marginBottom: Spacing.md,
   },
-  statCard: {
-    flex: 1,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.card,
+  statsRowGap: {
+    height: Spacing.md,
+  },
+  territoryCardWrap: {
+    marginBottom: Spacing.md,
+  },
+  territoryCard: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: Spacing.sm,
   },
   logoutButton: {
     flexDirection: 'row',
@@ -550,8 +494,10 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.card,
+    borderRadius: 14,
     marginTop: Spacing.md,
+    borderWidth: 1,
+    borderColor: AuroraColors.danger,
   },
   trailColorSection: {
     marginBottom: Spacing.lg,
@@ -575,6 +521,11 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  colorSwatchSelected: {
+    borderWidth: 3,
+    borderColor: AuroraColors.text,
+    transform: [{ scale: 1.15 }],
   },
   trailPreview: {
     flexDirection: 'row',

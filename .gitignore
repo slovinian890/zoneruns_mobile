@@ -42,3 +42,17 @@ react/Runner/android/build/
 # IDE
 .vscode/
 .idea/
+
+# Claude Code tooling (local skill installs, MCP config) -- not app code
+.claude/
+.agents/
+.mcp.json
+skills-lock.json
+
+# Stray root lockfile (no root package.json; app lives in react/Runner)
+/package-lock.json
+
+# Debug screenshots/dumps left over from on-device testing
+*.png
+!react/Runner/assets/images/*.png
+ui_dump*.txt

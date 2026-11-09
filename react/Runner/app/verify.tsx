@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors, Spacing, BorderRadius, CleanPaceColors } from '@/constants/theme';
+import { Colors, Spacing, BorderRadius, AuroraColors } from '@/constants/theme';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { sendPasswordReset } from '@/services/authService';
 
@@ -79,13 +79,13 @@ export default function ForgotPasswordScreen() {
                 style={[
                   styles.breathingRing,
                   {
-                    backgroundColor: CleanPaceColors.frostBlue,
+                    backgroundColor: AuroraColors.surface,
                     transform: [{ scale: dihalniPulz }],
                   }
                 ]} 
               />
-              <View style={[styles.iconWrapper, { backgroundColor: '#E8F5E9' }]}>
-                <IconSymbol name="checkmark.circle.fill" size={48} color="#4CAF50" />
+              <View style={[styles.iconWrapper, { backgroundColor: AuroraColors.primary + '26' }]}>
+                <IconSymbol name="checkmark.circle.fill" size={48} color={AuroraColors.primary} />
               </View>
             </View>
             
@@ -106,7 +106,7 @@ export default function ForgotPasswordScreen() {
               style={[styles.button, { backgroundColor: barve.primary }]}
               onPress={() => router.replace('/signin')}
               activeOpacity={0.7}>
-              <ThemedText type="bodyBold" lightColor={CleanPaceColors.offWhite} darkColor={CleanPaceColors.offWhite}>
+              <ThemedText type="bodyBold" lightColor={AuroraColors.onPrimary} darkColor={AuroraColors.onPrimary}>
                 Nazaj na prijavo
               </ThemedText>
             </TouchableOpacity>
@@ -147,7 +147,7 @@ export default function ForgotPasswordScreen() {
                 style={[
                   styles.breathingRing,
                   {
-                    backgroundColor: CleanPaceColors.frostBlue,
+                    backgroundColor: AuroraColors.surface,
                     transform: [{ scale: dihalniPulz }],
                   }
                 ]} 
@@ -198,7 +198,7 @@ export default function ForgotPasswordScreen() {
               onPress={ponastaviGeslo}
               disabled={nalaganje}
               activeOpacity={0.7}>
-              <ThemedText type="bodyBold" lightColor={CleanPaceColors.offWhite} darkColor={CleanPaceColors.offWhite}>
+              <ThemedText type="bodyBold" lightColor={AuroraColors.onPrimary} darkColor={AuroraColors.onPrimary}>
                 {nalaganje ? 'Pošiljanje...' : 'Pošlji povezavo za ponastavitev'}
               </ThemedText>
             </TouchableOpacity>
@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: CleanPaceColors.frostBlue,
+    backgroundColor: AuroraColors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },

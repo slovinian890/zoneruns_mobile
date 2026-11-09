@@ -1,0 +1,33 @@
+# .easignore replaces .gitignore's exclusions for the EAS Build upload
+# (it isn't additive), so everything that mattered there needs repeating
+# here too, or it gets swept into the tarball.
+
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Generated native Android project — not needed for an iOS build, and
+# EAS prebuilds its own native project in the cloud anyway.
+react/Runner/android/
+
+# Env files (contain secrets)
+.env
+.env*.local
+
+# Native build artifacts / signing material
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Claude Code tooling artifacts — not part of the app, and .agents/skills
+# contains a symlink that fails to archive on Windows (EPERM).
+.agents/
+.claude/
+.mcp.json
+skills-lock.json

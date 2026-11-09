@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors, Spacing, BorderRadius, CleanPaceColors } from '@/constants/theme';
+import { Colors, Spacing, BorderRadius, AuroraColors } from '@/constants/theme';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { getProfileById } from '@/services/profileService';
@@ -99,7 +99,7 @@ export default function UserProfileScreen() {
             style={[styles.backButton, { backgroundColor: barve.primary }]}
             onPress={() => usmerjevalnik.back()}
             activeOpacity={0.7}>
-            <ThemedText type="bodyBold" lightColor={CleanPaceColors.offWhite} darkColor={CleanPaceColors.offWhite}>
+            <ThemedText type="bodyBold" lightColor={AuroraColors.onPrimary} darkColor={AuroraColors.onPrimary}>
               Nazaj
             </ThemedText>
           </TouchableOpacity>
@@ -173,27 +173,39 @@ export default function UserProfileScreen() {
             </View>
           </View>
 
-          {/* Gumb za sledenje */}
-          <TouchableOpacity
-            style={[
-              styles.followButton,
-              {
-                backgroundColor: sledinUporabniku ? barve.backgroundSecondary : barve.primary,
-                borderWidth: 1,
-                borderColor: sledinUporabniku ? barve.border : barve.primary,
-              },
-              nalaganjeDejanja && { opacity: 0.6 }
-            ]}
-            onPress={preklopiSledenje}
-            activeOpacity={0.7}
-            disabled={nalaganjeDejanja}>
-            <ThemedText
-              type="bodyBold"
-              lightColor={sledinUporabniku ? barve.text : CleanPaceColors.offWhite}
-              darkColor={sledinUporabniku ? barve.text : CleanPaceColors.offWhite}>
-              {nalaganjeDejanja ? 'Nalaganje...' : sledinUporabniku ? 'Sledim' : 'Sledi'}
-            </ThemedText>
-          </TouchableOpacity>
+          {/* Gumbi za sledenje in sporočilo */}
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={[
+                styles.followButton,
+                {
+                  backgroundColor: sledinUporabniku ? barve.backgroundSecondary : barve.primary,
+                  borderWidth: 1,
+                  borderColor: sledinUporabniku ? barve.border : barve.primary,
+                },
+                nalaganjeDejanja && { opacity: 0.6 }
+              ]}
+              onPress={preklopiSledenje}
+              activeOpacity={0.7}
+              disabled={nalaganjeDejanja}>
+              <ThemedText
+                type="bodyBold"
+                lightColor={sledinUporabniku ? barve.text : AuroraColors.onPrimary}
+                darkColor={sledinUporabniku ? barve.text : AuroraColors.onPrimary}>
+                {nalaganjeDejanja ? 'Nalaganje...' : sledinUporabniku ? 'Sledim' : 'Sledi'}
+              </ThemedText>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.messageButton,
+                { borderWidth: 1, borderColor: barve.border, backgroundColor: barve.background },
+              ]}
+              onPress={() => uporabnikId && usmerjevalnik.push({ pathname: '/chat', params: { userId: uporabnikId } })}
+              activeOpacity={0.7}>
+              <IconSymbol name="paperplane.fill" size={18} color={barve.primary} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Sekcija statistike */}
@@ -293,7 +305,7 @@ const styles = StyleSheet.create({
     height: 110,
     borderRadius: 55,
     borderWidth: 3,
-    borderColor: CleanPaceColors.offWhite,
+    borderColor: AuroraColors.text,
   },
   profileImagePlaceholder: {
     width: 110,
@@ -302,7 +314,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: CleanPaceColors.offWhite,
+    borderColor: AuroraColors.text,
   },
   displayName: {
     marginBottom: Spacing.xs,
@@ -337,12 +349,24 @@ const styles = StyleSheet.create({
     width: 1,
     height: 30,
   },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
   followButton: {
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.xl,
     borderRadius: BorderRadius.card,
     minWidth: 150,
     alignItems: 'center',
+  },
+  messageButton: {
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.card,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statsSection: {
     marginTop: Spacing.md,

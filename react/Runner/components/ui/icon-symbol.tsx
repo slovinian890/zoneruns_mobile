@@ -31,6 +31,8 @@ const ICON_MAPPING: Record<string, IconConfig> = {
   'checkmark': { library: 'fa', name: 'check' },
   'checkmark.circle.fill': { library: 'fa', name: 'check-circle' },
   'exclamationmark.triangle.fill': { library: 'fa', name: 'exclamation-triangle' },
+  'link': { library: 'fa', name: 'link' },
+  'paperplane': { library: 'fa', name: 'paper-plane-o' },
   
   // Running & Fitness
   'figure.run': { library: 'fa5', name: 'running' },
@@ -75,6 +77,7 @@ const ICON_MAPPING: Record<string, IconConfig> = {
   // Map & Location
   'location.fill': { library: 'fa', name: 'map-marker' },
   'map.fill': { library: 'fa', name: 'map' },
+  'hexagon.fill': { library: 'fa5', name: 'draw-polygon' },
   
   // Lists & Navigation
   'list.bullet': { library: 'fa', name: 'list' },

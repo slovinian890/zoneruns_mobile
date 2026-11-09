@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   avatar_url TEXT,
   bio TEXT,
   location TEXT,
+  trail_color TEXT DEFAULT '#5B7EA4',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -94,6 +95,9 @@ CREATE TABLE IF NOT EXISTS runs (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+-- NOTE: run_time/calories/elevation_m/avg_heart_rate/max_heart_rate were added
+-- after the first deployment — see migrations/001_add_missing_run_columns.sql.
+-- They're included directly here so this file alone bootstraps a fresh project.
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_runs_user ON runs(user_id);
@@ -491,4 +495,4 @@ INSERT INTO achievements (title, description, icon, category, requirement_type, 
 -- Health
 ('Calorie Crusher', 'Burn 10,000 calories running', 'faHeart', 'Health', 'total_calories', 10000),
 ('Mega Burner', 'Burn 50,000 calories running', 'faHeart', 'Health', 'total_calories', 50000),
-('Heart Health Hero', 'Complete 20 cardio zone runs', 'faHeart', 'Health', 'cardio_runs', 20)
+('Heart Health Hero', 'Complete 20 cardio zone runs', 'faHeart', 'Health', 'cardio_runs', 20);

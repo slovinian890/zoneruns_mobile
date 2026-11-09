@@ -1,7 +1,7 @@
-import { useRef, useEffect, useCallback } from 'react';
-import { StyleSheet, View, Platform } from 'react-native';
+import { useRef, useEffect, useCallback, useMemo } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { Colors } from '@/constants/theme';
+import { AuroraColors, Colors } from '@/constants/theme';
 
 export interface RunningMapProps {
   latitude: number;
@@ -13,11 +13,12 @@ export interface RunningMapProps {
 }
 
 const generateLeafletHTML = (lat: number, lng: number, isDark: boolean, trailColor: string) => {
-  const tileUrl = isDark
-    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-  
-  const tileAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>';
+  // Free, keyless, unlimited vector tiles (no API key, no rate limit) via MapLibre GL,
+  // rendered as a Leaflet layer through the maplibre-gl-leaflet plugin. Dark mode is a
+  // real OpenFreeMap style now, not a CSS filter over raster tiles.
+  const styleUrl = isDark
+    ? 'https://tiles.openfreemap.org/styles/dark'
+    : 'https://tiles.openfreemap.org/styles/positron';
 
   // Convert hex to rgb for animations
   const hexToRgb = (hex: string) => {
@@ -35,17 +36,20 @@ const generateLeafletHTML = (lat: number, lng: number, isDark: boolean, trailCol
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; }
-    #map { width: 100%; height: 100%; }
+    #map { width: 100%; height: 100%; background: ${AuroraColors.mapBase}; }
     .leaflet-control-attribution { font-size: 9px !important; }
     .pulse-marker {
       width: 16px; height: 16px;
       border-radius: 50%;
       background: ${trailColor};
-      border: 3px solid #FDFDFC;
+      border: 3px solid ${AuroraColors.text};
       box-shadow: 0 0 0 rgba(${trailRgb}, 0.4);
       animation: pulse 2s infinite;
     }
@@ -63,13 +67,13 @@ const generateLeafletHTML = (lat: number, lng: number, isDark: boolean, trailCol
       width: 12px; height: 12px;
       border-radius: 50%;
       background: #4CAF50;
-      border: 3px solid #FDFDFC;
+      border: 3px solid ${AuroraColors.text};
     }
     .end-marker {
       width: 12px; height: 12px;
       border-radius: 50%;
       background: #F44336;
-      border: 3px solid #FDFDFC;
+      border: 3px solid ${AuroraColors.text};
     }
   </style>
 </head>
@@ -86,10 +90,9 @@ const generateLeafletHTML = (lat: number, lng: number, isDark: boolean, trailCol
       attributionControl: true
     });
 
-    L.tileLayer('${tileUrl}', {
-      attribution: '${tileAttribution}',
-      maxZoom: 19,
-      subdomains: 'abcd'
+    L.maplibreGL({
+      style: '${styleUrl}',
+      attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
 
     // Current location marker
@@ -280,10 +283,11 @@ const generateLeafletHTML = (lat: number, lng: number, isDark: boolean, trailCol
 </html>`;
 };
 
-export default function RunningMap({ latitude, longitude, colors, route = [], isRunning = false, trailColor = '#5B7EA4' }: RunningMapProps) {
+export default function RunningMap({ latitude, longitude, colors, route = [], isRunning = false, trailColor = '#C9D54A' }: RunningMapProps) {
   const webViewRef = useRef<WebView>(null);
   const isReadyRef = useRef(false);
   const lastSentRouteLength = useRef(0);
+  const wasRunningRef = useRef(isRunning);
 
   const isDark = colors === Colors.dark;
 
@@ -293,26 +297,44 @@ export default function RunningMap({ latitude, longitude, colors, route = [], is
     }
   }, []);
 
-  // Update location when it changes
-  useEffect(() => {
-    sendMessage({ type: 'updateLocation', lat: latitude, lng: longitude });
-  }, [latitude, longitude, sendMessage]);
+  // The page is built once per mount from whatever position/color we have at
+  // that moment; every update after that travels over the postMessage bridge
+  // below instead. Baking live `latitude`/`longitude` into the HTML string
+  // would change the WebView's `source.html` on every GPS tick, and changing
+  // `source` forces react-native-webview to fully reload the page — wiping
+  // the Leaflet map (and the trail drawn on it) several times a second while
+  // running, which is why the trace never used to actually show up.
+  const initialRef = useRef({ latitude, longitude, trailColor });
+  const html = useMemo(
+    () =>
+      generateLeafletHTML(initialRef.current.latitude, initialRef.current.longitude, isDark, initialRef.current.trailColor),
+    [isDark],
+  );
 
-  // Update route when new points are added
+  // Location, route and running-state all land in one effect so they're
+  // applied in a deterministic order: a freshly started run clears the
+  // previous run's trail/markers before the new route starts streaming in.
   useEffect(() => {
+    const justStarted = isRunning && !wasRunningRef.current;
+    wasRunningRef.current = isRunning;
+
+    if (justStarted) {
+      sendMessage({ type: 'reset' });
+      lastSentRouteLength.current = 0;
+    }
+
+    sendMessage({ type: 'updateLocation', lat: latitude, lng: longitude });
+
     if (route.length > lastSentRouteLength.current) {
       sendMessage({ type: 'updateRoute', coords: route });
       lastSentRouteLength.current = route.length;
     }
-  }, [route, sendMessage]);
 
-  // Update running state
-  useEffect(() => {
     sendMessage({ type: 'setRunning', running: isRunning });
     if (!isRunning) {
       lastSentRouteLength.current = 0;
     }
-  }, [isRunning, sendMessage]);
+  }, [latitude, longitude, route, isRunning, sendMessage]);
 
   // Update trail color dynamically when it changes
   useEffect(() => {
@@ -328,14 +350,13 @@ export default function RunningMap({ latitude, longitude, colors, route = [], is
         sendMessage({ type: 'updateLocation', lat: latitude, lng: longitude });
         if (route.length > 0) {
           sendMessage({ type: 'updateRoute', coords: route });
+          lastSentRouteLength.current = route.length;
         }
         sendMessage({ type: 'setRunning', running: isRunning });
         sendMessage({ type: 'setTrailColor', color: trailColor });
       }
     } catch (e) {}
   }, [latitude, longitude, route, isRunning, trailColor, sendMessage]);
-
-  const html = generateLeafletHTML(latitude, longitude, isDark, trailColor);
 
   return (
     <View style={styles.container}>

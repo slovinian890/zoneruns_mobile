@@ -1,20 +1,27 @@
-import { StyleSheet, View, TouchableOpacity, FlatList, Alert, RefreshControl, TextInput, Modal, Platform, Dimensions } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, FlatList, Alert, RefreshControl, Modal, Platform } from 'react-native';
 import { useState, useEffect, useCallback } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { WebView } from 'react-native-webview';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors, Spacing, BorderRadius, CleanPaceColors } from '@/constants/theme';
+import { useAmbientVariant } from '@/components/ambient-background';
+import { Avatar } from '@/components/ui/avatar';
+import { EmptyState } from '@/components/ui/empty-state';
+import { GlassCard } from '@/components/ui/glass-card';
+import { Input } from '@/components/ui/input';
+import { ScreenHeader } from '@/components/ui/screen-header';
+import { StatBlock } from '@/components/ui/stat-block';
+import { Button } from '@/components/ui/button';
+import { TAB_BAR_HEIGHT } from '@/components/ui/floating-tab-bar';
+import { AuroraColors, BorderRadius, Spacing } from '@/constants/theme';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { getFeedPosts, toggleLike, getPostComments, addComment } from '@/services/socialService';
+import { getFeedPosts, toggleLike, getPostComments, addComment, createPost } from '@/services/socialService';
 import { getCurrentUser } from '@/services/authService';
 import { PostWithAuthor, PostCommentWithAuthor, RouteData } from '@/services/supabase';
 import { intervalToSeconds } from '@/services/runsService';
 import { DEFAULT_TRAIL_COLOR } from '@/services/trailColorService';
-
-const { width: SIRINA_ZASLONA } = Dimensions.get('window');
 
 // Generira mini Leaflet zemljevid za objave na feedu
 const generirajFeedPotHTML = (podatkiPoti: RouteData, jeTema: boolean): string => {
@@ -23,9 +30,9 @@ const generirajFeedPotHTML = (podatkiPoti: RouteData, jeTema: boolean): string =
 
   const barvaLinije = podatkiPoti.trailColor || DEFAULT_TRAIL_COLOR;
 
-  const urlPlosice = jeTema
-    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+  // Free, keyless OSM raster tiles. CARTO's free basemaps now require an API key,
+  // so dark mode is faked with a CSS filter on the tile pane instead of a separate tile set.
+  const urlPlosice = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
   const koordinateJSON = JSON.stringify(koordinate.map(k => [k.latitude, k.longitude]));
 
@@ -40,11 +47,12 @@ const generirajFeedPotHTML = (podatkiPoti: RouteData, jeTema: boolean): string =
   <style>
     * { margin: 0; padding: 0; }
     html, body { width: 100%; height: 100%; overflow: hidden; }
-    #map { width: 100%; height: 100%; }
+    #map { width: 100%; height: 100%; background: ${AuroraColors.mapBase}; }
     .leaflet-control-attribution { display: none !important; }
     .leaflet-control-zoom { display: none !important; }
-    .start-dot { width: 10px; height: 10px; border-radius: 50%; background: #4CAF50; border: 2px solid #fff; }
-    .end-dot { width: 10px; height: 10px; border-radius: 50%; background: #F44336; border: 2px solid #fff; }
+    ${jeTema ? '.leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9) saturate(0.85); }' : ''}
+    .start-dot { width: 10px; height: 10px; border-radius: 50%; background: ${AuroraColors.success}; border: 2px solid ${AuroraColors.text}; }
+    .end-dot { width: 10px; height: 10px; border-radius: 50%; background: ${AuroraColors.danger}; border: 2px solid ${AuroraColors.text}; }
   </style>
 </head>
 <body>
@@ -56,7 +64,7 @@ const generirajFeedPotHTML = (podatkiPoti: RouteData, jeTema: boolean): string =
       dragging: false, scrollWheelZoom: false, doubleClickZoom: false,
       touchZoom: false, boxZoom: false, keyboard: false
     });
-    L.tileLayer('${urlPlosice}', { maxZoom: 19, subdomains: 'abcd' }).addTo(map);
+    L.tileLayer('${urlPlosice}', { maxZoom: 19, subdomains: 'abc' }).addTo(map);
     if (coords.length > 0) {
       L.polyline(coords, { color: '${barvaLinije}', weight: 7, opacity: 0.2 }).addTo(map);
       var line = L.polyline(coords, { color: '${barvaLinije}', weight: 3, opacity: 0.9 }).addTo(map);
@@ -78,9 +86,9 @@ const generirajPodrobnostiZemljevidHTML = (podatkiPoti: RouteData, jeTema: boole
 
   const barvaLinije = podatkiPoti.trailColor || DEFAULT_TRAIL_COLOR;
 
-  const urlPlosice = jeTema
-    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+  // Free, keyless OSM raster tiles. CARTO's free basemaps now require an API key,
+  // so dark mode is faked with a CSS filter on the tile pane instead of a separate tile set.
+  const urlPlosice = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
   const koordinateJSON = JSON.stringify(koordinate.map(k => [k.latitude, k.longitude]));
 
@@ -95,10 +103,11 @@ const generirajPodrobnostiZemljevidHTML = (podatkiPoti: RouteData, jeTema: boole
   <style>
     * { margin: 0; padding: 0; }
     html, body { width: 100%; height: 100%; overflow: hidden; }
-    #map { width: 100%; height: 100%; }
+    #map { width: 100%; height: 100%; background: ${AuroraColors.mapBase}; }
     .leaflet-control-attribution { font-size: 9px !important; }
-    .start-dot { width: 14px; height: 14px; border-radius: 50%; background: #4CAF50; border: 3px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
-    .end-dot { width: 14px; height: 14px; border-radius: 50%; background: #F44336; border: 3px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+    ${jeTema ? '.leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9) saturate(0.85); }' : ''}
+    .start-dot { width: 14px; height: 14px; border-radius: 50%; background: ${AuroraColors.success}; border: 3px solid ${AuroraColors.text}; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+    .end-dot { width: 14px; height: 14px; border-radius: 50%; background: ${AuroraColors.danger}; border: 3px solid ${AuroraColors.text}; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
   </style>
 </head>
 <body>
@@ -106,7 +115,7 @@ const generirajPodrobnostiZemljevidHTML = (podatkiPoti: RouteData, jeTema: boole
   <script>
     var coords = ${koordinateJSON};
     var map = L.map('map', { zoomControl: true, attributionControl: true });
-    L.tileLayer('${urlPlosice}', { maxZoom: 19, subdomains: 'abcd' }).addTo(map);
+    L.tileLayer('${urlPlosice}', { maxZoom: 19, subdomains: 'abc' }).addTo(map);
     if (coords.length > 0) {
       L.polyline(coords, { color: '${barvaLinije}', weight: 10, opacity: 0.2, lineCap: 'round', lineJoin: 'round' }).addTo(map);
       var line = L.polyline(coords, { color: '${barvaLinije}', weight: 4, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(map);
@@ -122,9 +131,9 @@ const generirajPodrobnostiZemljevidHTML = (podatkiPoti: RouteData, jeTema: boole
 };
 
 export default function FeedScreen() {
-  const barvnaShema = useColorScheme();
-  const barve = Colors[barvnaShema ?? 'light'];
-  const jeTema = barvnaShema === 'dark';
+  useAmbientVariant('default');
+  const insets = useSafeAreaInsets();
+  const jeTema = true;
   const usmerjevalnik = useRouter();
   const [objave, setObjave] = useState<PostWithAuthor[]>([]);
   const [nalaganje, setNalaganje] = useState(true);
@@ -138,6 +147,11 @@ export default function FeedScreen() {
 
   // Stanje modala s podrobnostmi
   const [podrobnostiObjave, setPodrobnostiObjave] = useState<PostWithAuthor | null>(null);
+
+  // Stanje urejevalnika nove objave
+  const [prikaziUrejevalnik, setPrikaziUrejevalnik] = useState(false);
+  const [besediloNoveObjave, setBesediloNoveObjave] = useState('');
+  const [objavljanje, setObjavljanje] = useState(false);
 
   useEffect(() => {
     naloziUporabnika();
@@ -156,9 +170,7 @@ export default function FeedScreen() {
 
   const naloziObjave = async () => {
     try {
-      console.log('[FeedScreen] Loading posts...');
       const rezultat = await getFeedPosts({ page: 1, limit: 20 });
-      console.log('[FeedScreen] Result:', { error: rezultat.error, count: rezultat.data?.length, total: rezultat.count });
       if (rezultat.error) {
         setNapakaFeeda(rezultat.error);
         setObjave([]);
@@ -178,6 +190,28 @@ export default function FeedScreen() {
   const osveziPodatke = () => {
     setOsvezevanje(true);
     naloziObjave();
+  };
+
+  // Objavi novo besedilno objavo na feed
+  const objaviNaFeed = async () => {
+    const besedilo = besediloNoveObjave.trim();
+    if (!besedilo) return;
+    if (!trenutniUporabnikId) {
+      Alert.alert('Napaka', 'Prosimo, prijavite se za objavljanje');
+      return;
+    }
+
+    setObjavljanje(true);
+    const rezultat = await createPost({ type: 'social', content: besedilo });
+    setObjavljanje(false);
+
+    if (rezultat.success) {
+      setBesediloNoveObjave('');
+      setPrikaziUrejevalnik(false);
+      naloziObjave();
+    } else {
+      Alert.alert('Napaka', rezultat.error || 'Objava ni uspela');
+    }
   };
 
   // Preklopi všeček – pošlje zahtevo na strežnik in lokalno posodobi števec
@@ -333,17 +367,12 @@ export default function FeedScreen() {
     return (
       <Modal visible={!!podrobnostiObjave} transparent animationType="slide" onRequestClose={() => setPodrobnostiObjave(null)}>
         <View style={styles.detailOverlay}>
-          <ThemedView style={[styles.detailModal, { backgroundColor: jeTema ? barve.card : barve.background }]}>
+          <ThemedView style={styles.detailModal}>
+            <View style={styles.sheetHandle} />
             {/* Glava */}
-            <View style={[styles.detailHeader, { borderBottomColor: barve.border }]}>
+            <View style={styles.detailHeader}>
               <View style={styles.detailHeaderLeft}>
-                {profilPodrobnosti?.avatar_url ? (
-                  <Image source={{ uri: profilPodrobnosti.avatar_url }} style={styles.detailAvatar} />
-                ) : (
-                  <View style={[styles.detailAvatarPlaceholder, { backgroundColor: barve.backgroundSecondary }]}>
-                    <IconSymbol name="person.fill" size={20} color={barve.primary} />
-                  </View>
-                )}
+                <Avatar uri={profilPodrobnosti?.avatar_url} size={40} />
                 <View>
                   <ThemedText type="bodyBold">
                     {profilPodrobnosti?.display_name || profilPodrobnosti?.username || 'Tekač'}
@@ -358,8 +387,8 @@ export default function FeedScreen() {
                   </ThemedText>
                 </View>
               </View>
-              <TouchableOpacity onPress={() => setPodrobnostiObjave(null)} style={styles.closeButton}>
-                <IconSymbol name="xmark" size={22} color={barve.text} />
+              <TouchableOpacity onPress={() => setPodrobnostiObjave(null)} style={styles.closeButton} hitSlop={8}>
+                <IconSymbol name="xmark" size={22} color={AuroraColors.text} />
               </TouchableOpacity>
             </View>
 
@@ -380,27 +409,14 @@ export default function FeedScreen() {
 
             {/* Statistika teka */}
             {tek && (
-              <View style={[styles.detailStats, { borderColor: barve.border }]}>
-                <View style={styles.detailStatItem}>
-                  <ThemedText type="h2" variant="primary">
-                    {Number(tek.distance_km || 0).toFixed(2)}
-                  </ThemedText>
-                  <ThemedText type="caption" variant="muted">km</ThemedText>
-                </View>
-                <View style={[styles.detailStatDivider, { backgroundColor: barve.border }]} />
-                <View style={styles.detailStatItem}>
-                  <ThemedText type="h2" variant="primary">
-                    {oblikujTrajanje(tek.duration ?? null)}
-                  </ThemedText>
-                  <ThemedText type="caption" variant="muted">čas</ThemedText>
-                </View>
-                <View style={[styles.detailStatDivider, { backgroundColor: barve.border }]} />
-                <View style={styles.detailStatItem}>
-                  <ThemedText type="h2" variant="primary">
-                    {tek.pace ?? '0:00'}
-                  </ThemedText>
-                  <ThemedText type="caption" variant="muted">tempo/km</ThemedText>
-                </View>
+              <View style={styles.detailStats}>
+                <StatBlock
+                  stats={[
+                    { value: Number(tek.distance_km || 0).toFixed(2), label: 'km' },
+                    { value: oblikujTrajanje(tek.duration ?? null), label: 'čas' },
+                    { value: tek.pace ?? '0:00', label: 'tempo/km' },
+                  ]}
+                />
               </View>
             )}
 
@@ -412,13 +428,13 @@ export default function FeedScreen() {
             ) : null}
 
             {/* Število všečkov in komentarjev */}
-            <View style={[styles.detailFooter, { borderTopColor: barve.border }]}>
+            <View style={styles.detailFooter}>
               <View style={styles.detailFooterItem}>
-                <IconSymbol name="heart.fill" size={16} color={barve.primary} />
+                <IconSymbol name="heart.fill" size={16} color={AuroraColors.primary} />
                 <ThemedText type="bodySmall" variant="muted">{podrobnostiObjave.likes_count ?? 0} všečkov</ThemedText>
               </View>
               <View style={styles.detailFooterItem}>
-                <IconSymbol name="bubble.left" size={16} color={barve.icon} />
+                <IconSymbol name="bubble.left" size={16} color={AuroraColors.textMuted} />
                 <ThemedText type="bodySmall" variant="muted">{podrobnostiObjave.comments_count ?? 0} komentarjev</ThemedText>
               </View>
             </View>
@@ -435,28 +451,11 @@ export default function FeedScreen() {
     const prikaziZemljevid = imaPodatkePoti(item);
 
     return (
-      <View
-        style={[
-          styles.postCard,
-          {
-            backgroundColor: jeTema ? barve.card : barve.background,
-            borderWidth: 1,
-            borderColor: barve.border,
-          },
-        ]}>
+      <GlassCard style={styles.postCard}>
         {/* Glava uporabnika */}
         <View style={styles.postHeader}>
-          <TouchableOpacity
-            style={styles.userInfo}
-            onPress={() => obdelajPritiskUporabnika(item.user_id)}
-            activeOpacity={0.7}>
-            {profil?.avatar_url ? (
-              <Image source={{ uri: profil.avatar_url }} style={styles.avatar} />
-            ) : (
-              <View style={[styles.avatarPlaceholder, { backgroundColor: barve.backgroundSecondary }]}>
-                <IconSymbol name="person.fill" size={20} color={barve.primary} />
-              </View>
-            )}
+          <TouchableOpacity style={styles.userInfo} onPress={() => obdelajPritiskUporabnika(item.user_id)} activeOpacity={0.7}>
+            <Avatar uri={profil?.avatar_url} size={40} />
             <View style={styles.userDetails}>
               <ThemedText type="bodyBold">
                 {profil?.display_name || profil?.username || 'Neznano'}
@@ -475,13 +474,20 @@ export default function FeedScreen() {
           </ThemedText>
         )}
 
+        {/* Priložena slika (npr. izvožen mesečni pregled iz Analitike) */}
+        {item.image_url && (
+          <View style={styles.postImageContainer}>
+            <Image source={{ uri: item.image_url }} style={styles.postImage} contentFit="contain" />
+          </View>
+        )}
+
         {/* Mini zemljevid poti (klikljiv za odprtje podrobnosti) */}
         {prikaziZemljevid && item.runs?.route_data && (
           <TouchableOpacity activeOpacity={0.9} onPress={() => setPodrobnostiObjave(item)}>
             {izrisiMiniZemljevid(item.runs.route_data as RouteData)}
-            <View style={[styles.mapOverlayLabel, { backgroundColor: barve.primary + 'CC' }]}>
-              <IconSymbol name="map.fill" size={12} color="#FFFFFF" />
-              <ThemedText type="caption" lightColor="#FFFFFF" darkColor="#FFFFFF">
+            <View style={styles.mapOverlayLabel}>
+              <IconSymbol name="map.fill" size={12} color={AuroraColors.onPrimary} />
+              <ThemedText type="caption" lightColor={AuroraColors.onPrimary} darkColor={AuroraColors.onPrimary}>
                 Tapni za ogled poti
               </ThemedText>
             </View>
@@ -490,74 +496,42 @@ export default function FeedScreen() {
 
         {/* Povzetek statistike teka */}
         {item.runs && (
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => setPodrobnostiObjave(item)}
-            style={[
-              styles.runStats,
-              {
-                backgroundColor: jeTema ? barve.background : barve.backgroundSecondary,
-                borderWidth: 1,
-                borderColor: barve.border,
-              },
-            ]}>
-            <View style={styles.statItem}>
-              <ThemedText type="h3" variant="primary">
-                {Number(item.runs.distance_km || 0).toFixed(2)}
-              </ThemedText>
-              <ThemedText type="caption" variant="muted">km</ThemedText>
-            </View>
-            <View style={[styles.statDivider, { backgroundColor: barve.border }]} />
-            <View style={styles.statItem}>
-              <ThemedText type="h3" variant="primary">
-                {oblikujTrajanje(item.runs.duration ?? null)}
-              </ThemedText>
-              <ThemedText type="caption" variant="muted">čas</ThemedText>
-            </View>
-            <View style={[styles.statDivider, { backgroundColor: barve.border }]} />
-            <View style={styles.statItem}>
-              <ThemedText type="h3" variant="primary">
-                {item.runs.pace ?? '0:00'}
-              </ThemedText>
-              <ThemedText type="caption" variant="muted">tempo/km</ThemedText>
-            </View>
+          <TouchableOpacity activeOpacity={0.8} onPress={() => setPodrobnostiObjave(item)} style={styles.runStats}>
+            <StatBlock
+              stats={[
+                { value: Number(item.runs.distance_km || 0).toFixed(2), label: 'km' },
+                { value: oblikujTrajanje(item.runs.duration ?? null), label: 'čas' },
+                { value: item.runs.pace ?? '0:00', label: 'tempo/km' },
+              ]}
+            />
           </TouchableOpacity>
         )}
 
         {/* Gumbi za všeček in komentarje */}
-        <View style={[styles.postActions, { borderTopColor: barve.border }]}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => obdelajVsecek(item)}
-            activeOpacity={0.7}>
+        <View style={styles.postActions}>
+          <TouchableOpacity style={styles.actionButton} onPress={() => obdelajVsecek(item)} activeOpacity={0.7}>
             <IconSymbol
               name={item.is_liked ? 'heart.fill' : 'heart'}
               size={20}
-              color={item.is_liked ? barve.primary : barve.icon}
+              color={item.is_liked ? AuroraColors.primary : AuroraColors.textMuted}
             />
             <ThemedText type="bodySmall" variant={item.is_liked ? 'primary' : 'muted'}>
               {item.likes_count ?? 0}
             </ThemedText>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => preklopiKomentarje(item.id)}
-            activeOpacity={0.7}>
+          <TouchableOpacity style={styles.actionButton} onPress={() => preklopiKomentarje(item.id)} activeOpacity={0.7}>
             <IconSymbol
               name="bubble.left"
               size={20}
-              color={razsirjenaObjavaId === item.id ? barve.primary : barve.icon}
+              color={razsirjenaObjavaId === item.id ? AuroraColors.primary : AuroraColors.textMuted}
             />
             <ThemedText type="bodySmall" variant={razsirjenaObjavaId === item.id ? 'primary' : 'muted'}>
               {item.comments_count ?? 0}
             </ThemedText>
           </TouchableOpacity>
           {item.runs && (
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => setPodrobnostiObjave(item)}
-              activeOpacity={0.7}>
-              <IconSymbol name="arrow.up.right.square" size={20} color={barve.icon} />
+            <TouchableOpacity style={styles.actionButton} onPress={() => setPodrobnostiObjave(item)} activeOpacity={0.7}>
+              <IconSymbol name="arrow.up.right.square" size={20} color={AuroraColors.textMuted} />
               <ThemedText type="bodySmall" variant="muted">Podrobnosti</ThemedText>
             </TouchableOpacity>
           )}
@@ -565,26 +539,13 @@ export default function FeedScreen() {
 
         {/* Sekcija komentarjev */}
         {razsirjenaObjavaId === item.id && (
-          <View style={[styles.commentsSection, { borderTopColor: barve.border }]}>
+          <View style={styles.commentsSection}>
             {komentarji[item.id] && komentarji[item.id].length > 0 && (
               <View style={styles.commentsList}>
                 {komentarji[item.id].map((komentar) => (
                   <View key={komentar.id} style={styles.commentItem}>
-                    <TouchableOpacity
-                      style={styles.commentHeader}
-                      onPress={() => obdelajPritiskUporabnika(komentar.user_id)}
-                      activeOpacity={0.7}>
-                      {komentar.profiles?.avatar_url ? (
-                        <Image source={{ uri: komentar.profiles.avatar_url }} style={styles.commentAvatar} />
-                      ) : (
-                        <View
-                          style={[
-                            styles.commentAvatarPlaceholder,
-                            { backgroundColor: barve.backgroundSecondary },
-                          ]}>
-                          <IconSymbol name="person.fill" size={12} color={barve.primary} />
-                        </View>
-                      )}
+                    <TouchableOpacity style={styles.commentHeader} onPress={() => obdelajPritiskUporabnika(komentar.user_id)} activeOpacity={0.7}>
+                      <Avatar uri={komentar.profiles?.avatar_url} size={28} />
                       <View style={styles.commentContent}>
                         <ThemedText type="bodySmall" variant="primary">
                           {komentar.profiles?.display_name || komentar.profiles?.username || 'Neznano'}
@@ -603,37 +564,28 @@ export default function FeedScreen() {
             )}
 
             {/* Vnos komentarja */}
-            <View
-              style={[
-                styles.commentInputContainer,
-                {
-                  backgroundColor: jeTema ? barve.background : barve.backgroundSecondary,
-                  borderColor: barve.border,
-                },
-              ]}>
-              <TextInput
-                style={[styles.commentInput, { color: barve.text }]}
-                value={besediloKomentarja[item.id] || ''}
-                onChangeText={(besedilo) => setBesediloKomentarja((prej) => ({ ...prej, [item.id]: besedilo }))}
-                placeholder="Dodaj komentar..."
-                placeholderTextColor={barve.textMuted}
-                multiline
-                editable={!posiljamKomentar}
-              />
+            <View style={styles.commentInputRow}>
+              <View style={styles.commentInputWrap}>
+                <Input
+                  value={besediloKomentarja[item.id] || ''}
+                  onChangeText={(besedilo) => setBesediloKomentarja((prej) => ({ ...prej, [item.id]: besedilo }))}
+                  placeholder="Dodaj komentar..."
+                  multiline
+                  editable={!posiljamKomentar}
+                  style={styles.commentInput}
+                />
+              </View>
               <TouchableOpacity
                 onPress={() => dodajKomentar(item.id)}
                 disabled={!besediloKomentarja[item.id]?.trim() || posiljamKomentar}
-                style={[
-                  styles.sendButton,
-                  (!besediloKomentarja[item.id]?.trim() || posiljamKomentar) && { opacity: 0.5 },
-                ]}
+                style={[styles.sendButton, (!besediloKomentarja[item.id]?.trim() || posiljamKomentar) && { opacity: 0.5 }]}
                 activeOpacity={0.7}>
-                <IconSymbol name="arrow.up.circle.fill" size={32} color={barve.primary} />
+                <IconSymbol name="arrow.up.circle.fill" size={32} color={AuroraColors.primary} />
               </TouchableOpacity>
             </View>
           </View>
         )}
-      </View>
+      </GlassCard>
     );
   };
 
@@ -649,70 +601,86 @@ export default function FeedScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <View
-        style={[
-          styles.header,
-          {
-            backgroundColor: jeTema ? barve.card : barve.backgroundSecondary,
-            borderBottomWidth: 1,
-            borderBottomColor: barve.border,
-          },
-        ]}>
-        <ThemedText type="h3">Feed</ThemedText>
-      </View>
+      <ScreenHeader title="Feed" actions={[{ icon: 'plus', onPress: () => setPrikaziUrejevalnik(true) }]} />
 
       {napakaFeeda ? (
-        <View style={styles.emptyState}>
-          <IconSymbol name="exclamationmark.triangle.fill" size={64} color={barve.primary} />
-          <ThemedText type="h3" style={styles.emptyText}>Feeda ni mogoče naložiti</ThemedText>
-          <ThemedText type="body" variant="muted" style={styles.emptySubtext}>
-            {napakaFeeda}
-          </ThemedText>
-          <TouchableOpacity
-            onPress={osveziPodatke}
-            style={[styles.retryButton, { backgroundColor: barve.primary }]}
-            activeOpacity={0.8}>
-            <ThemedText type="bodyBold" lightColor="#FFFFFF" darkColor="#FFFFFF">
-              Poskusi znova
-            </ThemedText>
-          </TouchableOpacity>
-        </View>
+        <EmptyState
+          icon="exclamationmark.triangle.fill"
+          title="Feeda ni mogoče naložiti"
+          subtitle={napakaFeeda}
+          ctaLabel="Poskusi znova"
+          onPressCta={osveziPodatke}
+        />
       ) : objave.length === 0 ? (
-        <View style={styles.emptyState}>
-          <IconSymbol name="newspaper.fill" size={64} color={barve.icon} />
-          <ThemedText type="h3" style={styles.emptyText}>Še ni objav</ThemedText>
-          <ThemedText type="body" variant="muted" style={styles.emptySubtext}>
-            Zaključite tek in ga objavite, da se prikaže tukaj!
-          </ThemedText>
-        </View>
+        <EmptyState icon="newspaper.fill" title="Še ni objav" subtitle="Zaključite tek in ga objavite, da se prikaže tukaj!" />
       ) : (
         <FlatList
           data={objave}
           renderItem={izrisiObjavo}
           keyExtractor={(element) => element.id}
-          contentContainerStyle={styles.postsList}
+          contentContainerStyle={[styles.postsList, { paddingBottom: TAB_BAR_HEIGHT + insets.bottom + Spacing.lg }]}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={osvezevanje} onRefresh={osveziPodatke} />}
+          refreshControl={<RefreshControl refreshing={osvezevanje} onRefresh={osveziPodatke} tintColor={AuroraColors.primary} />}
         />
       )}
 
       {izrisiModalPodrobnosti()}
+
+      <Modal visible={prikaziUrejevalnik} transparent animationType="slide" onRequestClose={() => setPrikaziUrejevalnik(false)}>
+        <View style={styles.detailOverlay}>
+          <ThemedView style={styles.composerModal}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.detailHeader}>
+              <ThemedText type="h3">Nova objava</ThemedText>
+              <TouchableOpacity onPress={() => setPrikaziUrejevalnik(false)} style={styles.closeButton} hitSlop={8}>
+                <IconSymbol name="xmark" size={22} color={AuroraColors.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.composerContent}>
+              <Input
+                value={besediloNoveObjave}
+                onChangeText={setBesediloNoveObjave}
+                placeholder="Kaj imate novega?"
+                multiline
+                maxLength={280}
+                autoFocus
+                editable={!objavljanje}
+              />
+              <ThemedText type="caption" variant="muted" style={styles.composerCharCount}>
+                {besediloNoveObjave.length}/280
+              </ThemedText>
+              <Button
+                label={objavljanje ? 'Objavljanje...' : 'Objavi'}
+                onPress={objaviNaFeed}
+                disabled={!besediloNoveObjave.trim() || objavljanje}
+                loading={objavljanje}
+              />
+            </View>
+          </ThemedView>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: 'transparent' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: {
-    paddingTop: 60,
-    paddingBottom: Spacing.md,
-    paddingHorizontal: Spacing.md,
+  composerModal: {
+    backgroundColor: AuroraColors.bgElevated,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  composerContent: {
+    padding: Spacing.md,
+  },
+  composerCharCount: {
+    textAlign: 'right',
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.md,
   },
   postsList: { padding: Spacing.md },
   postCard: {
-    padding: Spacing.md,
-    borderRadius: BorderRadius.card,
     marginBottom: Spacing.md,
   },
   postHeader: {
@@ -721,22 +689,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.sm,
   },
-  userInfo: { flexDirection: 'row', alignItems: 'center' },
-  avatar: { width: 40, height: 40, borderRadius: 20, marginRight: Spacing.sm },
-  avatarPlaceholder: {
-    width: 40, height: 40, borderRadius: 20,
-    justifyContent: 'center', alignItems: 'center',
-    marginRight: Spacing.sm,
-  },
+  userInfo: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   userDetails: { flex: 1 },
   description: { marginBottom: Spacing.sm },
+  postImageContainer: {
+    width: '100%',
+    aspectRatio: 0.8,
+    borderRadius: BorderRadius.small,
+    overflow: 'hidden',
+    marginBottom: Spacing.sm,
+  },
+  postImage: { width: '100%', height: '100%' },
   miniMapContainer: {
     height: 160,
     borderRadius: BorderRadius.small,
     overflow: 'hidden',
     marginBottom: Spacing.sm,
     borderWidth: 1,
-    borderColor: '#ECECEC',
+    borderColor: AuroraColors.border,
   },
   miniMapWebView: { flex: 1, backgroundColor: 'transparent' },
   mapOverlayLabel: {
@@ -749,22 +719,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
+    backgroundColor: AuroraColors.primary + 'CC',
   },
   runStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.xs,
     borderRadius: BorderRadius.small,
     marginBottom: Spacing.sm,
+    backgroundColor: AuroraColors.surfaceSolid,
   },
-  statItem: { flex: 1, alignItems: 'center' },
-  statDivider: { width: 1, height: 24 },
   postActions: {
     flexDirection: 'row',
     paddingTop: Spacing.xs,
-    borderTopWidth: 1,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: AuroraColors.border,
     gap: Spacing.lg,
   },
   actionButton: {
@@ -776,35 +744,21 @@ const styles = StyleSheet.create({
   commentsSection: {
     marginTop: Spacing.sm,
     paddingTop: Spacing.sm,
-    borderTopWidth: 1,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: AuroraColors.border,
   },
   commentsList: { marginBottom: Spacing.sm },
   commentItem: { marginBottom: Spacing.sm },
-  commentHeader: { flexDirection: 'row', alignItems: 'flex-start' },
-  commentAvatar: {
-    width: 28, height: 28, borderRadius: 14,
-    marginRight: Spacing.xs,
-  },
-  commentAvatarPlaceholder: {
-    width: 28, height: 28, borderRadius: 14,
-    justifyContent: 'center', alignItems: 'center',
-    marginRight: Spacing.xs,
-  },
+  commentHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.xs },
   commentContent: { flex: 1 },
   commentText: { marginTop: 2, marginBottom: 2 },
-  commentInputContainer: {
+  commentInputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    borderWidth: 1,
-    borderRadius: BorderRadius.card,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
+    gap: Spacing.xs,
   },
+  commentInputWrap: { flex: 1 },
   commentInput: {
-    flex: 1,
-    fontSize: 14,
-    paddingVertical: Spacing.xs,
-    paddingRight: Spacing.xs,
     maxHeight: 100,
     fontFamily: Platform.select({
       ios: 'SF Pro Text',
@@ -812,25 +766,22 @@ const styles = StyleSheet.create({
       default: 'sans-serif',
     }),
   },
-  sendButton: { paddingLeft: Spacing.xs },
-  emptyState: {
-    flex: 1, justifyContent: 'center', alignItems: 'center',
-    padding: Spacing.xl,
-  },
-  emptyText: { marginTop: Spacing.md, marginBottom: Spacing.xs },
-  emptySubtext: { textAlign: 'center', marginBottom: Spacing.md },
-  retryButton: {
-    marginTop: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.card,
-  },
+  sendButton: { paddingBottom: Spacing.xs },
   detailOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: AuroraColors.scrim,
     justifyContent: 'flex-end',
   },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    marginTop: Spacing.sm,
+    backgroundColor: AuroraColors.border,
+  },
   detailModal: {
+    backgroundColor: AuroraColors.bgElevated,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '92%',
@@ -840,7 +791,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: Spacing.md,
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: AuroraColors.border,
   },
   detailHeaderLeft: {
     flexDirection: 'row',
@@ -848,44 +800,19 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     flex: 1,
   },
-  detailAvatar: { width: 40, height: 40, borderRadius: 20 },
-  detailAvatarPlaceholder: {
-    width: 40, height: 40, borderRadius: 20,
-    justifyContent: 'center', alignItems: 'center',
-  },
   closeButton: { padding: Spacing.xs },
   detailMapContainer: {
     height: 260,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ECECEC',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: AuroraColors.border,
   },
   detailMapWebView: { flex: 1, backgroundColor: 'transparent' },
   detailStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
     paddingVertical: Spacing.md,
     marginHorizontal: Spacing.md,
     marginTop: Spacing.md,
-    borderWidth: 1,
     borderRadius: BorderRadius.card,
-  },
-  detailStatItem: { flex: 1, alignItems: 'center' },
-  detailStatDivider: { width: 1, height: 36 },
-  detailExtraRow: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    marginTop: Spacing.sm,
-    marginHorizontal: Spacing.md,
-    borderWidth: 1,
-    borderRadius: BorderRadius.small,
-  },
-  detailExtraItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
+    backgroundColor: AuroraColors.surfaceSolid,
   },
   detailDescription: {
     paddingHorizontal: Spacing.md,
@@ -896,7 +823,8 @@ const styles = StyleSheet.create({
     gap: Spacing.lg,
     padding: Spacing.md,
     marginTop: Spacing.sm,
-    borderTopWidth: 1,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: AuroraColors.border,
   },
   detailFooterItem: {
     flexDirection: 'row',

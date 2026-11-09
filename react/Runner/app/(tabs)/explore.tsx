@@ -6,7 +6,7 @@ import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors, CleanPaceColors, Spacing } from '@/constants/theme';
+import { Colors, AuroraColors, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function TabTwoScreen() {
@@ -15,7 +15,7 @@ export default function TabTwoScreen() {
   
   return (
     <ParallaxScrollView
-      headerBackgroundColor={{ light: CleanPaceColors.frostBlue, dark: colors.card }}
+      headerBackgroundColor={{ light: AuroraColors.surface, dark: colors.card }}
       headerImage={
         <IconSymbol
           size={310}

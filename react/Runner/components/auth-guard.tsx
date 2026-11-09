@@ -86,6 +86,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 16,
+    backgroundColor: 'transparent',
   },
   loadingText: {
     fontSize: 16,

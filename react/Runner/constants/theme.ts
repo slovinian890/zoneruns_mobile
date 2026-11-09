@@ -1,71 +1,112 @@
 /**
- * Clean Pace Minimal Design System
- * Ultra-minimal Scandinavian-inspired design for runners tracking progress mindfully.
+ * Grove Design System — Premium Dark
+ * Deep, almost-black olive glass with a zesty chartreuse brand accent.
+ * Built dark-first: the app always renders this palette regardless of the
+ * device's system theme. Every color in the app should come from this file —
+ * nothing outside it should hold a literal hex/rgb value.
  */
 
 import { Platform } from 'react-native';
 
-/**
- * Clean Pace Color Palette
- * #FDFDFC – Off White: calm, bright, uncluttered
- * #DCEAF2 – Frost Blue: reduces stress and UI noise
- * #AAC4D6 – Misty Slate: supportive neutrals
- * #5B7EA4 – Cool Steel: strong but muted
- * #2A2E36 – Charcoal: stable dark contrast
- */
-export const CleanPaceColors = {
-  offWhite: '#FDFDFC',
-  frostBlue: '#DCEAF2',
-  mistySlate: '#AAC4D6',
-  coolSteel: '#5B7EA4',
-  charcoal: '#2A2E36',
-  border: '#ECECEC',
+export const AuroraColors = {
+  // ── Base layers ──
+  // bg: the deepest layer, painted once by <AmbientBackground/> behind the
+  // whole app. bgElevated: sheets, modals, anything that should read as
+  // "above" the ambient background rather than part of it.
+  bg: '#0D1108',
+  bgElevated: '#141A0C',
+  mapBase: '#10140B',
+
+  // ── Surfaces ──
+  // surface: translucent glass (pair with expo-blur) for GlassCard.
+  // surfaceSolid: an opaque fallback for places blur isn't worth the cost.
+  surface: 'rgba(28, 36, 18, 0.72)',
+  surfaceSolid: '#1A2111',
+  border: 'rgba(201, 213, 74, 0.10)',
+  highlight: 'rgba(255, 255, 255, 0.06)', // 1px top edge on glass cards
+  scrim: 'rgba(13, 17, 8, 0.78)', // full-screen modal backdrop
+
+  // ── Brand ──
+  primary: '#C9D54A',
+  primaryPressed: '#B3BE3A',
+  // Soft tinted-primary fill for icon badges/rings (EmptyState, achievements) —
+  // primary at low opacity, named so it isn't re-derived as a one-off rgba() string.
+  primarySoft: 'rgba(201, 213, 74, 0.12)',
+  // Chartreuse/amber are both light — text/icons drawn on a primary- or
+  // accent-filled surface need a dark foreground to stay readable.
+  onPrimary: '#12160A',
+
+  // ── Accents ──
+  accentAmber: '#E8C23C',
+  accentTerracotta: '#C8572D',
+  accentForest: '#1F4D2E',
+
+  // ── Text ──
+  text: '#F1F3E6',
+  textMuted: '#9BA28A',
+  textFaint: '#626A55',
+
+  // ── Status ──
+  success: '#8FCB5A',
+  warning: '#E8C23C',
+  danger: '#D9603B',
+
+  // ── Territory zone states (the Compete map) ──
+  zoneMine: '#C9D54A',
+  zoneRival: '#C8572D',
+  zoneContested: '#E8C23C',
+  zoneNeutral: '#4A5240',
+
   transparent: 'transparent',
+
+  // ── Legacy aliases ──
+  // Older screens were written against these names; repointed to the closest
+  // new-palette equivalent so nothing breaks while the whole app reads from
+  // the same tokens above. Prefer the names above in new code.
+  background: '#0D1108', // == bg
+  accent: '#E8C23C', // == accentAmber
+  textSecondary: '#9BA28A', // == textMuted
+  forestGreen: '#1F4D2E', // == accentForest
+  leafGreen: '#8BC24A',
+};
+
+const auroraTheme = {
+  text: AuroraColors.text,
+  textSecondary: AuroraColors.textMuted,
+  textMuted: AuroraColors.textFaint,
+  textFaint: AuroraColors.textFaint,
+  background: AuroraColors.bg,
+  backgroundSecondary: AuroraColors.bgElevated,
+  bg: AuroraColors.bg,
+  bgElevated: AuroraColors.bgElevated,
+  surface: AuroraColors.surface,
+  surfaceSolid: AuroraColors.surfaceSolid,
+  scrim: AuroraColors.scrim,
+  highlight: AuroraColors.highlight,
+  tint: AuroraColors.primary,
+  icon: AuroraColors.textMuted,
+  tabIconDefault: AuroraColors.textFaint,
+  tabIconSelected: AuroraColors.primary,
+  border: AuroraColors.border,
+  card: AuroraColors.surfaceSolid,
+  // Accent colors
+  primary: AuroraColors.primary,
+  primaryPressed: AuroraColors.primaryPressed,
+  onPrimary: AuroraColors.onPrimary,
+  secondary: AuroraColors.accentAmber,
+  accent: AuroraColors.accentAmber,
+  success: AuroraColors.success,
+  warning: AuroraColors.warning,
+  danger: AuroraColors.danger,
+  // Running-specific
+  running: AuroraColors.primary,
+  runningSecondary: AuroraColors.textMuted,
+  runningAccent: AuroraColors.accentAmber,
 };
 
 export const Colors = {
-  light: {
-    text: CleanPaceColors.charcoal,
-    textSecondary: CleanPaceColors.coolSteel,
-    textMuted: CleanPaceColors.mistySlate,
-    background: CleanPaceColors.offWhite,
-    backgroundSecondary: CleanPaceColors.frostBlue,
-    tint: CleanPaceColors.coolSteel,
-    icon: CleanPaceColors.mistySlate,
-    tabIconDefault: CleanPaceColors.mistySlate,
-    tabIconSelected: CleanPaceColors.coolSteel,
-    border: CleanPaceColors.border,
-    card: CleanPaceColors.offWhite,
-    // Accent colors
-    primary: CleanPaceColors.coolSteel,
-    secondary: CleanPaceColors.mistySlate,
-    accent: CleanPaceColors.frostBlue,
-    // Running-specific
-    running: CleanPaceColors.coolSteel,
-    runningSecondary: CleanPaceColors.mistySlate,
-    runningAccent: CleanPaceColors.frostBlue,
-  },
-  dark: {
-    text: CleanPaceColors.offWhite,
-    textSecondary: CleanPaceColors.mistySlate,
-    textMuted: CleanPaceColors.coolSteel,
-    background: CleanPaceColors.charcoal,
-    backgroundSecondary: '#1F2227',
-    tint: CleanPaceColors.mistySlate,
-    icon: CleanPaceColors.coolSteel,
-    tabIconDefault: CleanPaceColors.coolSteel,
-    tabIconSelected: CleanPaceColors.mistySlate,
-    border: '#3A3E46',
-    card: '#32363E',
-    // Accent colors
-    primary: CleanPaceColors.mistySlate,
-    secondary: CleanPaceColors.coolSteel,
-    accent: '#364A5E',
-    // Running-specific
-    running: CleanPaceColors.mistySlate,
-    runningSecondary: CleanPaceColors.coolSteel,
-    runningAccent: '#364A5E',
-  },
+  light: auroraTheme,
+  dark: auroraTheme,
 };
 
 /**
@@ -146,14 +187,51 @@ export const Animation = {
 };
 
 /**
+ * Elevation - cross-platform shadow tokens (iOS shadow* + Android elevation).
+ * `glowPrimary` is for the one or two primary-action surfaces per screen — a
+ * colored glow, not a generic drop shadow, so it doesn't turn into visual
+ * noise if overused.
+ */
+export const Shadows = {
+  card: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  floating: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  glowPrimary: {
+    shadowColor: AuroraColors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  glowDanger: {
+    shadowColor: AuroraColors.danger,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+};
+
+/**
  * Soft Gradient Rings - Signature visual element
  * For profile photos and stats, referencing breath and controlled pacing
  */
 export const GradientRings = {
   colors: [
-    CleanPaceColors.frostBlue,
-    CleanPaceColors.mistySlate + '80', // 50% opacity
-    CleanPaceColors.coolSteel + '40', // 25% opacity
+    AuroraColors.primary,
+    AuroraColors.accentAmber + '80', // 50% opacity
+    AuroraColors.surfaceSolid + '40', // 25% opacity
   ],
   breathing: {
     duration: 3000,

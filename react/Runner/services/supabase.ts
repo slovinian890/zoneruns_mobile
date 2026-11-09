@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, Session, User, AuthChangeEvent } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
@@ -8,13 +9,26 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Missing Supabase environment variables');
 }
 
+// `expo export`'s static web build prerenders every route in Node before any
+// browser `window` exists. This module runs at import time, so on that pass
+// AsyncStorage's web shim (and GoTrueClient's session/auto-refresh init) would
+// touch `window` and crash immediately. Skip persistence/auto-refresh there;
+// real browser and native runs are unaffected.
+const isServerRender = Platform.OS === 'web' && typeof window === 'undefined';
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    storage: AsyncStorage,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: false,
-  },
+  auth: isServerRender
+    ? {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      }
+    : {
+        storage: AsyncStorage,
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: false,
+      },
 });
 
 // Re-export useful types from Supabase
@@ -32,6 +46,7 @@ export interface Profile {
   avatar_url: string | null;
   bio: string | null;
   location: string | null;
+  trail_color: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -200,10 +215,85 @@ export interface UpdateRunInput extends Partial<CreateRunInput> {}
 
 export interface UpdateProfileInput {
   username?: string;
-  display_name?: string;
-  bio?: string;
-  location?: string;
-  avatar_url?: string;
+  display_name?: string | null;
+  bio?: string | null;
+  location?: string | null;
+  avatar_url?: string | null;
+  trail_color?: string;
+}
+
+// ============================================
+// TERRITORY TYPES
+// ============================================
+
+/** A GeoJSON Polygon/MultiPolygon as returned by ST_AsGeoJSON */
+export interface TerritoryGeoJSON {
+  type: 'Polygon' | 'MultiPolygon';
+  coordinates: number[][][] | number[][][][];
+}
+
+/** One user's claimed area within the current map bounds (from get_territories_in_bounds) */
+export interface TerritoryFeature {
+  user_id: string;
+  username: string;
+  display_name: string | null;
+  trail_color: string;
+  area_m2: number;
+  geojson: TerritoryGeoJSON;
+}
+
+/** Result of the claim_territory_from_run RPC */
+export interface ClaimTerritoryResult {
+  success: boolean;
+  reason?: 'already_claimed' | 'run_not_found' | 'not_owner' | 'too_few_points' | 'loop_not_closed' | 'invalid_polygon' | 'area_too_small';
+  gap_m?: number;
+  area_m2?: number;
+  claimed_area_m2?: number;
+  total_area_m2?: number;
+  stolen?: Array<{ user_id: string; area_m2: number; zones_lost: number }>;
+}
+
+// ============================================
+// ATTACK NOTIFICATION TYPES
+// ============================================
+
+/** One "someone stole your territory" event (see migrations/009_attack_notifications.sql) */
+export interface AttackNotification {
+  id: string;
+  victim_id: string;
+  attacker_id: string;
+  attacker_username: string;
+  attacker_display_name: string | null;
+  run_id: string | null;
+  area_m2: number;
+  zones_lost: number;
+  place_label: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+// ============================================
+// MESSAGE TYPES
+// ============================================
+
+export interface Message {
+  id: string;
+  sender_id: string;
+  recipient_id: string;
+  content: string;
+  created_at: string;
+  read_at: string | null;
+}
+
+export interface Conversation {
+  partner_id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  last_message: string;
+  last_message_at: string;
+  last_sender_id: string;
+  unread_count: number;
 }
 
 export interface UpdateProfileSettingsInput {
@@ -211,6 +301,76 @@ export interface UpdateProfileSettingsInput {
   stats_visible?: boolean;
   runs_visible?: boolean;
   achievements_visible?: boolean;
+}
+
+// ============================================
+// GROUP TYPES
+// ============================================
+
+export interface Group {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string;
+  is_public: boolean;
+  invite_code: string;
+  member_count: number;
+  created_by: string | null;
+  created_at: string;
+}
+
+export type GroupRole = 'owner' | 'member';
+
+export interface GroupMember {
+  group_id: string;
+  user_id: string;
+  role: GroupRole;
+  joined_at: string;
+}
+
+/** One row of a group's "My Groups" list — the group plus the caller's role in it. */
+export interface GroupWithRole extends Group {
+  role: GroupRole;
+}
+
+/** One member row from get_group_stats, ranked by their own claimed territory. */
+export interface GroupMemberStat {
+  user_id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  area_m2: number;
+}
+
+/** One row from get_group_leaderboard. */
+export interface GroupLeaderboardEntry {
+  group_id: string;
+  name: string;
+  color: string;
+  member_count: number;
+  total_area_m2: number;
+  rank: number;
+}
+
+/** One group's merged/unioned member territory, clipped to the map viewport. */
+export interface GroupTerritoryFeature {
+  group_id: string;
+  name: string;
+  color: string;
+  area_m2: number;
+  geojson: TerritoryGeoJSON;
+}
+
+export interface GroupMessage {
+  id: string;
+  group_id: string;
+  sender_id: string;
+  content: string;
+  created_at: string;
+}
+
+export interface GroupMessageWithAuthor extends GroupMessage {
+  profiles: Pick<Profile, 'username' | 'display_name' | 'avatar_url'>;
 }
 
 export interface CreatePostInput {

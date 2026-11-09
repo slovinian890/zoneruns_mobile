@@ -4,28 +4,51 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Alert,
-  Animated,
 } from 'react-native';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import * as Location from 'expo-location';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BlurView } from 'expo-blur';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors, Spacing, BorderRadius, CleanPaceColors } from '@/constants/theme';
+import { useAmbientVariant } from '@/components/ambient-background';
+import { Spacing, AuroraColors, Shadows } from '@/constants/theme';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { GradientButton } from '@/components/ui/gradient-button';
+import { SegmentedControl } from '@/components/ui/segmented-control';
+import { StatBlock } from '@/components/ui/stat-block';
+import { TAB_BAR_HEIGHT } from '@/components/ui/floating-tab-bar';
 import RunningMap from '@/components/running-map';
 import TerritoryMap from '@/components/territory-map';
 import { createRun, secondsToInterval, calculatePace } from '@/services/runsService';
 import { updateUserStatsAfterRun, checkAndAwardAchievements } from '@/services/statsService';
 import { getCurrentUser } from '@/services/authService';
-import { Run, RouteData } from '@/services/supabase';
+import { Run, RouteData, TerritoryFeature, GroupTerritoryFeature, ClaimTerritoryResult } from '@/services/supabase';
+import { getGroupTerritoriesInBounds, getMyGroups } from '@/services/groupsService';
 import PostRunModal from '@/components/post-run-modal';
 import { getTrailColor, DEFAULT_TRAIL_COLOR } from '@/services/trailColorService';
+import { Colors } from '@/constants/theme';
 import {
-  getTerritoriesFromRuns,
-  HexTerritory,
+  getTerritoriesInBounds,
+  claimTerritoryFromRun,
+  getMyTerritoryStats,
+  isLoopReady,
+  formatArea,
 } from '@/services/territoryService';
+import { getPlaceLabel, notifyAttackVictims, zoneWord } from '@/services/notificationsService';
+import {
+  startBackgroundLocationTracking,
+  stopBackgroundLocationTracking,
+  setBackgroundLocationListener,
+} from '@/services/locationTask';
 import { useFocusEffect } from 'expo-router';
+
+// GPS fixes worse than this (meters) are dropped instead of being drawn into
+// the trail or counted toward distance / loop closure — a bad single fix
+// otherwise shows up as a spike in the route and can throw off both.
+const NAJSLABSA_SPREJEMLJIVA_NATANCNOST_M = 30;
 
 // ── Haversine formula za izračun razdalje (km) med dvema GPS točkama ──
 // Uporablja polmer Zemlje (6371 km) in trigonometrične funkcije za natančen
@@ -51,8 +74,7 @@ const izracunajRazdaljo = (
 type Nacin = 'idle' | 'running' | 'compete';
 
 export default function HomeScreen() {
-  const barvnaShema = useColorScheme();
-  const barve = Colors[barvnaShema ?? 'light'];
+  const insets = useSafeAreaInsets();
 
   // ── GPS & dovoljenja ──
   const [lokacija, setLokacija] = useState<Location.LocationObject | null>(null);
@@ -61,6 +83,7 @@ export default function HomeScreen() {
 
   // ── Način ──
   const [nacin, setNacin] = useState<Nacin>('idle');
+  useAmbientVariant(nacin === 'running' ? 'active' : 'default');
 
   // ── Stanje teka ──
   const [razdalja, setRazdalja] = useState(0);
@@ -78,14 +101,19 @@ export default function HomeScreen() {
   // ── Modal po teku ──
   const [prikaziModalObjave, setPrikaziModalObjave] = useState(false);
   const [shranjenTek, setShranjenTek] = useState<Run | null>(null);
+  const [zadnjiRezultatOzemlja, setZadnjiRezultatOzemlja] = useState<ClaimTerritoryResult | null>(null);
 
   // ── Barva sledi ──
   const [barvaSled, setBarvaSled] = useState<string>(DEFAULT_TRAIL_COLOR);
 
   // ── Stanje tekmovanja ──
-  const [teritoriji, setTeritorioji] = useState<HexTerritory[]>([]);
-  const [mojePlosice, setMojePlosice] = useState(0);
+  const [teritoriji, setTeritorioji] = useState<TerritoryFeature[]>([]);
+  const [teritorijiSkupin, setTeritorijiSkupin] = useState<GroupTerritoryFeature[]>([]);
+  const [mojaPovrsina, setMojaPovrsina] = useState(0);
   const [uporabnikId, setUporabnikId] = useState<string>('');
+  const [pogledOzemlja, setPogledOzemlja] = useState<'posamezniki' | 'skupine'>('posamezniki');
+  const [mojeSkupineId, setMojeSkupineId] = useState<string[]>([]);
+  const zadnjiOkvirRef = useRef<{ minLat: number; maxLat: number; minLng: number; maxLng: number } | null>(null);
 
   // ── Naloži podatke uporabnika & barvo sledi ob fokusu ──
   useFocusEffect(
@@ -98,28 +126,23 @@ export default function HomeScreen() {
   );
 
   // ── Animacija dihanja za aktivni časovnik ──
-  const dihalniPulz = useRef(new Animated.Value(1)).current;
+  const dihalniPulz = useSharedValue(1);
 
   useEffect(() => {
     if (nacin === 'running') {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(dihalniPulz, {
-            toValue: 1.05,
-            duration: 1500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(dihalniPulz, {
-            toValue: 1,
-            duration: 1500,
-            useNativeDriver: true,
-          }),
-        ]),
-      ).start();
+      dihalniPulz.value = withRepeat(
+        withTiming(1.05, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
+        -1,
+        true,
+      );
     } else {
-      dihalniPulz.setValue(1);
+      dihalniPulz.value = withTiming(1, { duration: 200 });
     }
-  }, [nacin]);
+  }, [nacin, dihalniPulz]);
+
+  const statsBarAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: dihalniPulz.value }],
+  }));
 
   // ── Neprekinjeno sledenje lokaciji v mirovanju ──
   // Zahteva dovoljenja, preveri storitve in začne spremljati GPS pozicijo
@@ -172,42 +195,68 @@ export default function HomeScreen() {
   }, []);
 
   // ── Časovnik + GPS sledenje v živo med tekom ──
-  // Ko se tek začne, ustavi mirovno sledenje in zažene visokofrekvenčno GPS sledenje.
-  // Za vsako novo točko izračuna razdaljo s Haversine formulo in posodobi pot.
+  // Ko se tek začne, ustavi mirovno sledenje in zažene sledenje lokaciji
+  // prek ozadnega taska (services/locationTask), ki pošilja točke tudi,
+  // če je zaslon zaklenjen ali je aplikacija v ozadju — telefon namreč
+  // med tekom običajno ni ves čas odklenjen v roki. Če se ozadnje sledenje
+  // iz kakršnegakoli razloga ne zažene (npr. dovoljenje zavrnjeno), pade
+  // nazaj na navadno sledenje v ospredju, da tek vseeno deluje.
   useEffect(() => {
-    if (nacin === 'running' && zacetniCas) {
-      casovnikRef.current = setInterval(() => {
-        setTrajanje(Math.floor((Date.now() - zacetniCas) / 1000));
-      }, 1000);
+    if (!(nacin === 'running' && zacetniCas)) return;
 
-      mirovanjeNarocnina.current?.remove();
-      mirovanjeNarocnina.current = null;
+    let aktiven = true;
 
-      Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1500, distanceInterval: 2 },
-        (novaLok) => {
-          const { latitude, longitude } = novaLok.coords;
-          setLokacija(novaLok);
+    casovnikRef.current = setInterval(() => {
+      setTrajanje(Math.floor((Date.now() - zacetniCas) / 1000));
+    }, 1000);
 
-          if (zadnjaLokacijaRef.current) {
-            const odsek = izracunajRazdaljo(
-              zadnjaLokacijaRef.current.latitude,
-              zadnjaLokacijaRef.current.longitude,
-              latitude,
-              longitude,
-            );
-            if (odsek < 0.1) setRazdalja((prej) => prej + odsek);
-          }
+    mirovanjeNarocnina.current?.remove();
+    mirovanjeNarocnina.current = null;
 
-          zadnjaLokacijaRef.current = { latitude, longitude };
-          setPot((prej) => [...prej, { latitude, longitude }]);
-        },
-      ).then((nar) => { narocninaLokacije.current = nar; });
-    } else {
+    const obdelajNovoLokacijo = (novaLok: Location.LocationObject) => {
+      if (!aktiven) return;
+      const { latitude, longitude, accuracy } = novaLok.coords;
+      if (accuracy != null && accuracy > NAJSLABSA_SPREJEMLJIVA_NATANCNOST_M) return;
+
+      setLokacija(novaLok);
+
+      if (zadnjaLokacijaRef.current) {
+        const odsek = izracunajRazdaljo(
+          zadnjaLokacijaRef.current.latitude,
+          zadnjaLokacijaRef.current.longitude,
+          latitude,
+          longitude,
+        );
+        if (odsek < 0.1) setRazdalja((prej) => prej + odsek);
+      }
+
+      zadnjaLokacijaRef.current = { latitude, longitude };
+      setPot((prej) => [...prej, { latitude, longitude }]);
+    };
+
+    setBackgroundLocationListener((lokacije) => lokacije.forEach(obdelajNovoLokacijo));
+    startBackgroundLocationTracking().then((uspeh) => {
+      if (!uspeh && aktiven) {
+        // Ni uspelo (npr. dovoljenje zavrnjeno) – nadaljuj vsaj v ospredju.
+        Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1500, distanceInterval: 2 },
+          obdelajNovoLokacijo,
+        ).then((nar) => { if (aktiven) narocninaLokacije.current = nar; else nar.remove(); });
+      }
+    });
+
+    activateKeepAwakeAsync('zoneruns-tek');
+
+    return () => {
+      aktiven = false;
       casovnikRef.current && clearInterval(casovnikRef.current);
       casovnikRef.current = null;
+
+      setBackgroundLocationListener(null);
+      stopBackgroundLocationTracking();
       narocninaLokacije.current?.remove();
       narocninaLokacije.current = null;
+      deactivateKeepAwake('zoneruns-tek');
 
       if (!mirovanjeNarocnina.current) {
         Location.watchPositionAsync(
@@ -215,11 +264,6 @@ export default function HomeScreen() {
           (lok) => setLokacija(lok),
         ).then((nar) => { mirovanjeNarocnina.current = nar; });
       }
-    }
-
-    return () => {
-      casovnikRef.current && clearInterval(casovnikRef.current);
-      narocninaLokacije.current?.remove();
     };
   }, [nacin, zacetniCas]);
 
@@ -236,6 +280,24 @@ export default function HomeScreen() {
     }
     setNacin('running');
   }, [lokacija]);
+
+  // ── Prikaži rezultat zasega ozemlja po teku ──
+  const prikaziRezultatOzemlja = useCallback((rezultat: ClaimTerritoryResult) => {
+    if (rezultat.success) {
+      const ukradeno = rezultat.stolen ?? [];
+      const skupajUkradeno = ukradeno.reduce((v, s) => v + s.area_m2, 0);
+      let sporocilo = `Zaseženo ${formatArea(rezultat.claimed_area_m2 ?? 0)} ozemlja!`;
+      if (ukradeno.length > 0) {
+        const skupajObmocij = ukradeno.reduce((v, s) => v + (s.zones_lost ?? 0), 0);
+        sporocilo += `\nOd tega ${formatArea(skupajUkradeno)} (${skupajObmocij} ${zoneWord(skupajObmocij)}) ukradenega ${
+          ukradeno.length === 1 ? 'nasprotniku' : `od ${ukradeno.length} nasprotnikov`
+        }.`;
+      }
+      Alert.alert('Ozemlje zaseženo! 🏴', sporocilo);
+    } else if (rezultat.reason === 'loop_not_closed') {
+      // Tiho – tek ni bil zanka, ni razloga za opozorilo ob vsakem teku
+    }
+  }, []);
 
   // ── Ustavi tek & shrani ──
   // Preveri minimalno trajanje, izračuna tempo in kalorije,
@@ -272,6 +334,10 @@ export default function HomeScreen() {
         trailColor: barvaSled,
       };
 
+      // Teče vzporedno s shranjevanjem teka spodaj — brez API ključa (uporabi
+      // že dovoljeno lokacijo naprave), zato lahko tiho spodleti brez posledic.
+      const krajZasegaPromise = getPlaceLabel(podatkiPoti.startLocation ?? null);
+
       const zdaj = new Date();
       const casTekaOblikovan = `${zdaj.getHours().toString().padStart(2, '0')}:${zdaj.getMinutes().toString().padStart(2, '0')}:${zdaj.getSeconds().toString().padStart(2, '0')}`;
 
@@ -295,6 +361,19 @@ export default function HomeScreen() {
               Alert.alert('Dosežek odklenjen! 🏆', noveDosezki.map((d) => d.title).join(', '));
             }
           }
+
+          // Poskusi zaseči ozemlje, če je pot sklenjena zanka
+          const rezultatOzemlja = await claimTerritoryFromRun(rezultat.run.id, await krajZasegaPromise);
+          prikaziRezultatOzemlja(rezultatOzemlja);
+
+          // Če smo komu ukradli ozemlje, pošlji push "pod napadom" obvestilo
+          // žrtvam (best-effort – attack_notifications vrstica že obstaja v
+          // bazi ne glede na to, ali ta klic uspe).
+          if (rezultatOzemlja.success && (rezultatOzemlja.stolen?.length ?? 0) > 0) {
+            void notifyAttackVictims(rezultat.run.id);
+          }
+
+          setZadnjiRezultatOzemlja(rezultatOzemlja);
           setShranjenTek(rezultat.run);
           setPrikaziModalObjave(true);
         }
@@ -314,16 +393,56 @@ export default function HomeScreen() {
     } finally {
       setShranjevanje(false);
     }
-  }, [trajanje, razdalja, pot, barvaSled]);
+  }, [trajanje, razdalja, pot, barvaSled, prikaziRezultatOzemlja]);
+
+  // ── Naloži ozemlja za trenutni pogled zemljevida ──
+  // Zapomni si zadnji okvir, da lahko preklopiOzemljaPogled znova naloži
+  // podatke za nov način (posamezniki/skupine), ne da bi čakali, da uporabnik
+  // znova premakne karto.
+  const naloziOzemljaVOkviru = useCallback(
+    async (minLat: number, maxLat: number, minLng: number, maxLng: number) => {
+      zadnjiOkvirRef.current = { minLat, maxLat, minLng, maxLng };
+      if (pogledOzemlja === 'skupine') {
+        const podatki = await getGroupTerritoriesInBounds(minLat, minLng, maxLat, maxLng);
+        setTeritorijiSkupin(podatki);
+      } else {
+        const podatki = await getTerritoriesInBounds(minLat, minLng, maxLat, maxLng);
+        setTeritorioji(podatki);
+      }
+    },
+    [pogledOzemlja],
+  );
+
+  // ── Preklopi med pogledom "posamezniki" in "skupine" na karti ozemelj ──
+  const preklopiPogledOzemlja = useCallback(
+    (novPogled: 'posamezniki' | 'skupine') => {
+      setPogledOzemlja(novPogled);
+      const okvir = zadnjiOkvirRef.current;
+      if (!okvir) return;
+      if (novPogled === 'skupine') {
+        getGroupTerritoriesInBounds(okvir.minLat, okvir.minLng, okvir.maxLat, okvir.maxLng).then(setTeritorijiSkupin);
+      } else {
+        getTerritoriesInBounds(okvir.minLat, okvir.minLng, okvir.maxLat, okvir.maxLng).then(setTeritorioji);
+      }
+    },
+    [],
+  );
 
   // ── Vstopi v način tekmovanja ──
   const obdelajTekmovanje = useCallback(async () => {
     setNacin('compete');
+    setPogledOzemlja('posamezniki');
 
-    const { territories: podatki, myCount } = await getTerritoriesFromRuns();
-    setTeritorioji(podatki);
-    setMojePlosice(myCount);
-  }, []);
+    const [{ areaM2 }, rezultatSkupin] = await Promise.all([getMyTerritoryStats(), getMyGroups()]);
+    setMojaPovrsina(areaM2);
+    setMojeSkupineId(rezultatSkupin.success ? (rezultatSkupin.groups ?? []).map((s) => s.id) : []);
+
+    if (lokacija) {
+      const { latitude: la, longitude: lo } = lokacija.coords;
+      const zamik = 0.01; // ~1km okvir ob vstopu, dokler karta ne sporoči natančnega pogleda
+      await naloziOzemljaVOkviru(la - zamik, la + zamik, lo - zamik, lo + zamik);
+    }
+  }, [lokacija, naloziOzemljaVOkviru]);
 
   // ── Oblikovalci ──
   const oblikujTrajanje = (sekunde: number): string => {
@@ -341,13 +460,14 @@ export default function HomeScreen() {
   };
 
   const tempo = oblikujTempo(razdalja, trajanje);
+  const zankaPripravljena = nacin === 'running' && isLoopReady(pot);
 
   // ── Stanja nalaganja / napake ──
   if (nalaganje) {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.centeredContainer}>
-          <ActivityIndicator size="large" color={barve.primary} />
+          <ActivityIndicator size="large" color={AuroraColors.primary} />
           <ThemedText type="body" variant="secondary" style={{ marginTop: Spacing.md }}>
             Pridobivanje vaše lokacije...
           </ThemedText>
@@ -360,7 +480,7 @@ export default function HomeScreen() {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.centeredContainer}>
-          <IconSymbol name="exclamationmark.triangle.fill" size={48} color={barve.primary} />
+          <IconSymbol name="exclamationmark.triangle.fill" size={48} color={AuroraColors.primary} />
           <ThemedText type="body" variant="secondary" style={{ textAlign: 'center', marginTop: Spacing.md }}>
             {sporocilNapake}
           </ThemedText>
@@ -378,60 +498,73 @@ export default function HomeScreen() {
   if (nacin === 'compete') {
     return (
       <ThemedView style={styles.container}>
-        <View
-          style={[
-            styles.header,
-            {
-              backgroundColor: barvnaShema === 'dark' ? barve.card : barve.backgroundSecondary,
-              borderBottomWidth: 1,
-              borderBottomColor: barve.border,
-            },
-          ]}>
+        <View style={[styles.header, Shadows.card, { paddingTop: insets.top + Spacing.sm }]}>
+          <BlurView intensity={24} tint="dark" style={StyleSheet.absoluteFillObject} />
+          <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, styles.headerTint]} />
           <View style={styles.headerContent}>
             <View style={styles.headerTitleRow}>
               <TouchableOpacity onPress={() => setNacin('idle')} style={styles.backBtn}>
-                <IconSymbol name="chevron.left" size={22} color={barve.primary} />
+                <IconSymbol name="chevron.left" size={22} color={AuroraColors.primary} />
               </TouchableOpacity>
-              <IconSymbol name="hexagon.fill" size={26} color={barve.primary} />
+              <IconSymbol name="hexagon.fill" size={26} color={AuroraColors.primary} />
               <ThemedText type="h3">Ozemlje</ThemedText>
             </View>
           </View>
 
-          <View
-            style={[
-              styles.tileBadge,
-              {
-                backgroundColor: barvnaShema === 'dark' ? barve.background : CleanPaceColors.offWhite,
-                borderWidth: 1,
-                borderColor: barve.border,
-              },
-            ]}>
-            <View style={styles.statItem}>
-              <ThemedText type="h2" variant="primary">
-                {mojePlosice}
-              </ThemedText>
-              <ThemedText type="caption" variant="muted">
-                ploščic
-              </ThemedText>
-            </View>
-            <View style={[styles.statDivider, { backgroundColor: barve.border }]} />
-            <View style={styles.statItem}>
+          <View style={styles.tileBadge}>
+            <StatBlock
+              stats={[
+                { value: formatArea(mojaPovrsina), label: 'vaše ozemlje' },
+              ]}
+            />
+            <View style={styles.colorDotRow}>
               <View style={[styles.colorDot, { backgroundColor: barvaSled }]} />
-              <ThemedText type="caption" variant="muted">
-                vaša barva
-              </ThemedText>
+              <ThemedText type="caption" variant="muted">vaša barva</ThemedText>
             </View>
+          </View>
+
+          <View style={styles.segmentedWrap}>
+            <SegmentedControl
+              segments={[
+                { key: 'posamezniki', label: 'Posamezniki' },
+                { key: 'skupine', label: 'Skupine' },
+              ]}
+              value={pogledOzemlja}
+              onChange={(key) => preklopiPogledOzemlja(key as 'posamezniki' | 'skupine')}
+            />
           </View>
         </View>
 
-        <TerritoryMap
-          latitude={latitude}
-          longitude={longitude}
-          colors={barve}
-          trailColor={barvaSled}
-          territories={teritoriji}
-          userId={uporabnikId}
-        />
+        {pogledOzemlja === 'skupine' ? (
+          <TerritoryMap
+            latitude={latitude}
+            longitude={longitude}
+            colors={Colors.dark}
+            trailColor={barvaSled}
+            territories={teritorijiSkupin.map((t) => ({
+              user_id: t.group_id,
+              username: t.name,
+              display_name: null,
+              trail_color: t.color,
+              area_m2: t.area_m2,
+              geojson: t.geojson,
+            }))}
+            highlightIds={mojeSkupineId}
+            mode="group"
+            onBoundsChanged={naloziOzemljaVOkviru}
+          />
+        ) : (
+          <TerritoryMap
+            latitude={latitude}
+            longitude={longitude}
+            colors={Colors.dark}
+            trailColor={barvaSled}
+            territories={teritoriji}
+            highlightIds={uporabnikId ? [uporabnikId] : []}
+            mode="individual"
+            onBoundsChanged={naloziOzemljaVOkviru}
+          />
+        )}
       </ThemedView>
     );
   }
@@ -441,68 +574,56 @@ export default function HomeScreen() {
   // ══════════════════════════════════════════════════════════
   return (
     <ThemedView style={styles.container}>
-      <View
-        style={[
-          styles.header,
-          {
-            backgroundColor: barvnaShema === 'dark' ? barve.card : barve.backgroundSecondary,
-            borderBottomWidth: 1,
-            borderBottomColor: barve.border,
-          },
-        ]}>
+      <View style={[styles.header, Shadows.card, { paddingTop: insets.top + Spacing.sm }]}>
+        <BlurView intensity={24} tint="dark" style={StyleSheet.absoluteFillObject} />
+        <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, styles.headerTint]} />
         <View style={styles.headerContent}>
           <View style={styles.headerTitleRow}>
-            <IconSymbol name="figure.run" size={28} color={barve.primary} />
+            <IconSymbol name="figure.run" size={28} color={AuroraColors.primary} />
             <ThemedText type="h3">Run Tracker</ThemedText>
           </View>
         </View>
 
         {nacin === 'running' && (
-          <Animated.View
-            style={[
-              styles.statsBar,
-              {
-                backgroundColor:
-                  barvnaShema === 'dark' ? barve.background : CleanPaceColors.offWhite,
-                borderWidth: 1,
-                borderColor: barve.primary,
-                transform: [{ scale: dihalniPulz }],
-              },
-            ]}>
-            <View style={styles.statItem}>
-              <ThemedText type="h2" variant="primary">
-                {razdalja.toFixed(2)}
-              </ThemedText>
-              <ThemedText type="caption" variant="muted">
-                km
-              </ThemedText>
-            </View>
-            <View style={[styles.statDivider, { backgroundColor: barve.border }]} />
-            <View style={styles.statItem}>
-              <ThemedText type="h2" variant="primary">
-                {oblikujTrajanje(trajanje)}
-              </ThemedText>
-              <ThemedText type="caption" variant="muted">
-                čas
-              </ThemedText>
-            </View>
-            <View style={[styles.statDivider, { backgroundColor: barve.border }]} />
-            <View style={styles.statItem}>
-              <ThemedText type="h2" variant="primary">
-                {tempo}
-              </ThemedText>
-              <ThemedText type="caption" variant="muted">
-                tempo/km
-              </ThemedText>
-            </View>
+          <Animated.View style={[styles.statsBar, Shadows.glowPrimary, statsBarAnimatedStyle]}>
+            <StatBlock
+              stats={[
+                { value: razdalja.toFixed(2), label: 'km' },
+                { value: oblikujTrajanje(trajanje), label: 'čas' },
+                { value: tempo, label: 'tempo/km' },
+              ]}
+            />
           </Animated.View>
+        )}
+
+        {nacin === 'running' && (
+          <View
+            style={[
+              styles.loopHint,
+              zankaPripravljena ? styles.loopHintReady : styles.loopHintWaiting,
+            ]}>
+            <IconSymbol
+              name={zankaPripravljena ? 'checkmark.circle.fill' : 'link'}
+              size={14}
+              color={zankaPripravljena ? AuroraColors.onPrimary : AuroraColors.textMuted}
+            />
+            <ThemedText
+              type="caption"
+              lightColor={zankaPripravljena ? AuroraColors.onPrimary : undefined}
+              darkColor={zankaPripravljena ? AuroraColors.onPrimary : undefined}
+              variant={zankaPripravljena ? undefined : 'muted'}>
+              {zankaPripravljena
+                ? 'Zanka sklenjena – ustavite za zaseg ozemlja!'
+                : 'Tecite nazaj proti začetku, da sklenete zanko'}
+            </ThemedText>
+          </View>
         )}
       </View>
 
       <RunningMap
         latitude={latitude}
         longitude={longitude}
-        colors={barve}
+        colors={Colors.dark}
         route={pot}
         isRunning={nacin === 'running'}
         trailColor={barvaSled}
@@ -512,70 +633,48 @@ export default function HomeScreen() {
         style={[
           styles.controlPanel,
           {
-            backgroundColor: barvnaShema === 'dark' ? barve.card : barve.background,
-            borderTopWidth: 1,
-            borderTopColor: barve.border,
+            // Floating tab bar sits on top of content rather than reserving its
+            // own layout space — clear it so Start/Stop never sit underneath it.
+            paddingBottom: TAB_BAR_HEIGHT + insets.bottom + Spacing.lg,
           },
         ]}>
+        <BlurView intensity={24} tint="dark" style={StyleSheet.absoluteFillObject} />
+        <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, styles.headerTint]} />
         {nacin === 'idle' ? (
           <View style={styles.buttonRow}>
-            <TouchableOpacity
-              style={[styles.startButton, { backgroundColor: barve.primary, flex: 1 }]}
+            <GradientButton
+              label="Začni tek"
+              icon="play.fill"
               onPress={zacniTek}
-              activeOpacity={0.7}>
-              <IconSymbol name="play.fill" size={22} color={CleanPaceColors.offWhite} />
-              <ThemedText
-                type="bodyBold"
-                lightColor={CleanPaceColors.offWhite}
-                darkColor={CleanPaceColors.offWhite}>
-                Začni tek
-              </ThemedText>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.competeButton,
-                {
-                  backgroundColor: barvnaShema === 'dark' ? barve.background : CleanPaceColors.frostBlue,
-                  borderWidth: 1.5,
-                  borderColor: barve.primary,
-                },
-              ]}
+              variant="primary"
+              style={{ flex: 1 }}
+            />
+            <GradientButton
+              label="Tekmuj"
+              icon="hexagon.fill"
               onPress={obdelajTekmovanje}
-              activeOpacity={0.7}>
-              <IconSymbol name="hexagon.fill" size={20} color={barve.primary} />
-              <ThemedText type="bodyBold" variant="primary">
-                Tekmuj
-              </ThemedText>
-            </TouchableOpacity>
+              variant="outline"
+            />
           </View>
         ) : (
-          <TouchableOpacity
-            style={[
-              styles.stopButton,
-              {
-                backgroundColor: barve.background,
-                borderWidth: 2,
-                borderColor: '#E53935',
-              },
-            ]}
+          <GradientButton
+            label={shranjevanje ? 'Shranjevanje...' : 'Ustavi & shrani'}
+            icon="stop.fill"
             onPress={ustaviTek}
-            activeOpacity={0.7}
-            disabled={shranjevanje}>
-            <IconSymbol name="stop.fill" size={22} color="#E53935" />
-            <ThemedText type="bodyBold" lightColor="#E53935" darkColor="#E53935">
-              {shranjevanje ? 'Shranjevanje...' : 'Ustavi & shrani'}
-            </ThemedText>
-          </TouchableOpacity>
+            variant="danger"
+            disabled={shranjevanje}
+          />
         )}
       </View>
 
       <PostRunModal
         visible={prikaziModalObjave}
         run={shranjenTek}
+        territoryResult={zadnjiRezultatOzemlja}
         onClose={() => {
           setPrikaziModalObjave(false);
           setShranjenTek(null);
+          setZadnjiRezultatOzemlja(null);
         }}
         onPost={() => {}}
       />
@@ -584,7 +683,7 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: 'transparent' },
   centeredContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -592,9 +691,14 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
   },
   header: {
-    paddingTop: 60,
     paddingBottom: Spacing.md,
     paddingHorizontal: Spacing.md,
+    overflow: 'hidden',
+    borderBottomWidth: 1,
+    borderBottomColor: AuroraColors.border,
+  },
+  headerTint: {
+    backgroundColor: AuroraColors.surface,
   },
   headerContent: { marginBottom: Spacing.sm },
   headerTitleRow: {
@@ -606,26 +710,47 @@ const styles = StyleSheet.create({
     padding: 4,
     marginRight: 2,
   },
+  segmentedWrap: {
+    marginTop: Spacing.sm,
+  },
   statsBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    borderRadius: BorderRadius.card,
+    borderRadius: 16,
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.sm,
     marginTop: Spacing.sm,
+    backgroundColor: AuroraColors.surfaceSolid,
+    borderWidth: 1,
+    borderColor: AuroraColors.primary,
+  },
+  loopHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    borderRadius: 9999,
+    paddingVertical: 6,
+    paddingHorizontal: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  loopHintReady: {
+    backgroundColor: AuroraColors.primary,
+  },
+  loopHintWaiting: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: AuroraColors.border,
   },
   tileBadge: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    borderRadius: BorderRadius.card,
+    borderRadius: 16,
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.sm,
     marginTop: Spacing.sm,
+    backgroundColor: AuroraColors.surfaceSolid,
   },
-  statItem: { flex: 1, alignItems: 'center' },
-  statDivider: { width: 1, height: 32 },
+  colorDotRow: {
+    alignItems: 'center',
+    marginTop: Spacing.sm,
+  },
   colorDot: {
     width: 24,
     height: 24,
@@ -635,37 +760,12 @@ const styles = StyleSheet.create({
   controlPanel: {
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.md,
-    paddingBottom: Spacing.lg,
+    overflow: 'hidden',
+    borderTopWidth: 1,
+    borderTopColor: AuroraColors.border,
   },
   buttonRow: {
     flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  startButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: BorderRadius.card,
-    gap: Spacing.sm,
-  },
-  competeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.card,
-    gap: Spacing.sm,
-  },
-  stopButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: BorderRadius.card,
     gap: Spacing.sm,
   },
 });

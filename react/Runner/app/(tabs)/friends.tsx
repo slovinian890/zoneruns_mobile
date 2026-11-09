@@ -1,29 +1,36 @@
-import { StyleSheet, View, TextInput, TouchableOpacity, Alert, FlatList, RefreshControl } from 'react-native';
-import { useState, useCallback } from 'react';
-import { Image } from 'expo-image';
+import { StyleSheet, View, TouchableOpacity, Alert, FlatList, RefreshControl } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors, Spacing, BorderRadius, CleanPaceColors } from '@/constants/theme';
-import { IconSymbol } from '@/components/ui/icon-symbol';
+import { useAmbientVariant } from '@/components/ambient-background';
+import { EmptyState } from '@/components/ui/empty-state';
+import { ListRow, listRowDividerStyle } from '@/components/ui/list-row';
+import { ScreenHeader } from '@/components/ui/screen-header';
+import { SegmentedControl } from '@/components/ui/segmented-control';
+import { TAB_BAR_HEIGHT } from '@/components/ui/floating-tab-bar';
+import { AuroraColors, BorderRadius, Spacing } from '@/constants/theme';
+import { SearchBar } from '@/components/ui/search-bar';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { 
-  getFollowing, 
+import {
+  getFollowing,
   getFollowers,
-  unfollowUser, 
+  unfollowUser,
   followUser,
   getFollowerCount,
   getFollowingCount,
 } from '@/services/socialService';
 import { searchProfiles } from '@/services/profileService';
 import { getCurrentUser } from '@/services/authService';
+import { getUnreadMessageCount } from '@/services/messagesService';
 import { Profile } from '@/services/supabase';
 
 type TipZavihka = 'following' | 'followers' | 'search';
 
 export default function FriendsScreen() {
-  const barvnaShema = useColorScheme();
-  const barve = Colors[barvnaShema ?? 'light'];
+  useAmbientVariant('default');
+  const insets = useSafeAreaInsets();
   const usmerjevalnik = useRouter();
   const [sledim, setSledim] = useState<Profile[]>([]);
   const [sledilci, setSledilci] = useState<Profile[]>([]);
@@ -35,10 +42,12 @@ export default function FriendsScreen() {
   const [trenutniUporabnikId, setTrenutniUporabnikId] = useState<string | null>(null);
   const [steviloSledim, setSteviloSledim] = useState(0);
   const [steviloSledilcev, setSteviloSledilcev] = useState(0);
+  const [nepreebranaSporocila, setNepreebranaSporocila] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
       naloziPodatke();
+      getUnreadMessageCount().then(setNepreebranaSporocila);
     }, [])
   );
 
@@ -47,14 +56,14 @@ export default function FriendsScreen() {
       const uporabnik = await getCurrentUser();
       if (uporabnik) {
         setTrenutniUporabnikId(uporabnik.id);
-        
+
         const [rezultatSledim, rezultatSledilci, stSledilcev, stSledim] = await Promise.all([
           getFollowing(uporabnik.id),
           getFollowers(uporabnik.id),
           getFollowerCount(uporabnik.id),
           getFollowingCount(uporabnik.id),
         ]);
-        
+
         setSledim(rezultatSledim.data);
         setSledilci(rezultatSledilci.data);
         setSteviloSledilcev(stSledilcev);
@@ -73,13 +82,17 @@ export default function FriendsScreen() {
     naloziPodatke();
   };
 
-  const obdelajIskanje = async () => {
-    if (!iskalniNiz.trim()) {
+  const zadnjaPoizvedbaRef = useRef('');
+
+  const obdelajIskanje = async (poizvedba: string) => {
+    zadnjaPoizvedbaRef.current = poizvedba;
+    if (!poizvedba) {
       setRezultatiIskanja([]);
       return;
     }
 
-    const rezultat = await searchProfiles(iskalniNiz.trim());
+    const rezultat = await searchProfiles(poizvedba);
+    if (zadnjaPoizvedbaRef.current !== poizvedba) return; // a newer query already superseded this one
     if (rezultat.success && rezultat.profiles) {
       const filtrirani = rezultat.profiles.filter(p => p.id !== trenutniUporabnikId);
       setRezultatiIskanja(filtrirani);
@@ -132,62 +145,37 @@ export default function FriendsScreen() {
 
   const izrisiUporabnika = ({ item }: { item: Profile }) => {
     const jeSleden = sledinUporabniku(item.id);
-    
-    return (
-      <View style={[styles.userCard, { 
-        backgroundColor: barvnaShema === 'dark' ? barve.card : barve.background,
-        borderWidth: 1,
-        borderColor: barve.border,
-      }]}>
-        <TouchableOpacity 
-          style={styles.userInfo}
-          onPress={() => obdelajPritiskUporabnika(item.id)}
+
+    const pill =
+      aktivniZavihek === 'following' ? (
+        <TouchableOpacity
+          onPress={() => obdelajOdsledenje(item.id, item.username)}
+          style={[styles.pill, styles.pillOutline]}
           activeOpacity={0.7}>
-          {item.avatar_url ? (
-            <Image source={{ uri: item.avatar_url }} style={styles.userAvatar} />
-          ) : (
-            <View style={[styles.userAvatarPlaceholder, { backgroundColor: barve.backgroundSecondary }]}>
-              <IconSymbol name="person.fill" size={24} color={barve.primary} />
-            </View>
-          )}
-          <View style={styles.userDetails}>
-            <ThemedText type="bodyBold">{item.display_name || item.username}</ThemedText>
-            <ThemedText type="caption" variant="muted">@{item.username}</ThemedText>
-          </View>
+          <ThemedText type="bodySmall" variant="muted">Prenehaj slediti</ThemedText>
         </TouchableOpacity>
-        
-        {aktivniZavihek === 'following' ? (
-          <TouchableOpacity
-            onPress={() => obdelajOdsledenje(item.id, item.username)}
-            style={[styles.actionButton, { 
-              backgroundColor: barvnaShema === 'dark' ? barve.background : barve.backgroundSecondary,
-              borderWidth: 1,
-              borderColor: barve.border,
-            }]}
-            activeOpacity={0.7}>
-            <ThemedText type="bodySmall" variant="muted">Prenehaj slediti</ThemedText>
-          </TouchableOpacity>
-        ) : aktivniZavihek === 'search' ? (
-          <TouchableOpacity
-            onPress={() => jeSleden ? obdelajOdsledenje(item.id, item.username) : obdelajSledenje(item.id)}
-            style={[
-              styles.actionButton, 
-              { 
-                backgroundColor: jeSleden ? barve.backgroundSecondary : barve.primary,
-                borderWidth: 1,
-                borderColor: jeSleden ? barve.border : barve.primary,
-              }
-            ]}
-            activeOpacity={0.7}>
-            <ThemedText 
-              type="bodySmall" 
-              lightColor={jeSleden ? barve.text : CleanPaceColors.offWhite}
-              darkColor={jeSleden ? barve.text : CleanPaceColors.offWhite}>
-              {jeSleden ? 'Sledim' : 'Sledi'}
-            </ThemedText>
-          </TouchableOpacity>
-        ) : null}
-      </View>
+      ) : aktivniZavihek === 'search' ? (
+        <TouchableOpacity
+          onPress={() => (jeSleden ? obdelajOdsledenje(item.id, item.username) : obdelajSledenje(item.id))}
+          style={[styles.pill, jeSleden ? styles.pillOutline : styles.pillFilled]}
+          activeOpacity={0.7}>
+          <ThemedText
+            type="bodySmall"
+            lightColor={jeSleden ? AuroraColors.text : AuroraColors.onPrimary}
+            darkColor={jeSleden ? AuroraColors.text : AuroraColors.onPrimary}>
+            {jeSleden ? 'Sledim' : 'Sledi'}
+          </ThemedText>
+        </TouchableOpacity>
+      ) : null;
+
+    return (
+      <ListRow
+        avatarUri={item.avatar_url}
+        title={item.display_name || item.username}
+        subtitle={`@${item.username}`}
+        trailing={pill}
+        onPress={() => obdelajPritiskUporabnika(item.id)}
+      />
     );
   };
 
@@ -219,99 +207,34 @@ export default function FriendsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <View style={[styles.header, { 
-        backgroundColor: barvnaShema === 'dark' ? barve.card : barve.backgroundSecondary,
-        borderBottomWidth: 1,
-        borderBottomColor: barve.border,
-      }]}>
-        <ThemedText type="h3">Skupnost</ThemedText>
-        <View style={styles.statsRow}>
-          <ThemedText type="bodySmall" variant="muted">
-            {steviloSledim} Sledim · {steviloSledilcev} Sledilcev
-          </ThemedText>
-        </View>
-      </View>
-
-      <View style={styles.tabs}>
-        <TouchableOpacity
-          style={[
-            styles.tab,
-            { 
-              borderWidth: 1,
-              borderColor: aktivniZavihek === 'following' ? barve.primary : barve.border,
-              backgroundColor: aktivniZavihek === 'following' ? barve.primary : barve.background,
-            },
-          ]}
-          onPress={() => setAktivniZavihek('following')}
-          activeOpacity={0.7}>
-          <ThemedText
-            type="bodyBold"
-            lightColor={aktivniZavihek === 'following' ? CleanPaceColors.offWhite : barve.text}
-            darkColor={aktivniZavihek === 'following' ? CleanPaceColors.offWhite : barve.text}>
-            Sledim
-          </ThemedText>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.tab,
-            { 
-              borderWidth: 1,
-              borderColor: aktivniZavihek === 'followers' ? barve.primary : barve.border,
-              backgroundColor: aktivniZavihek === 'followers' ? barve.primary : barve.background,
-            },
-          ]}
-          onPress={() => setAktivniZavihek('followers')}
-          activeOpacity={0.7}>
-          <ThemedText
-            type="bodyBold"
-            lightColor={aktivniZavihek === 'followers' ? CleanPaceColors.offWhite : barve.text}
-            darkColor={aktivniZavihek === 'followers' ? CleanPaceColors.offWhite : barve.text}>
-            Sledilci
-          </ThemedText>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.tab,
-            { 
-              borderWidth: 1,
-              borderColor: aktivniZavihek === 'search' ? barve.primary : barve.border,
-              backgroundColor: aktivniZavihek === 'search' ? barve.primary : barve.background,
-            },
-          ]}
-          onPress={() => setAktivniZavihek('search')}
-          activeOpacity={0.7}>
-          <IconSymbol 
-            name="magnifyingglass" 
-            size={18} 
-            color={aktivniZavihek === 'search' ? CleanPaceColors.offWhite : barve.text} 
+      <ScreenHeader
+        title="Skupnost"
+        subtitle={`${steviloSledim} Sledim · ${steviloSledilcev} Sledilcev`}
+        actions={[
+          { icon: 'magnifyingglass', onPress: () => setAktivniZavihek('search') },
+          { icon: 'paperplane.fill', onPress: () => usmerjevalnik.push('/messages'), badge: nepreebranaSporocila },
+        ]}>
+        <View style={styles.segmentedWrap}>
+          <SegmentedControl
+            segments={[
+              { key: 'following', label: 'Sledim' },
+              { key: 'followers', label: 'Sledilci' },
+            ]}
+            value={aktivniZavihek}
+            onChange={(key) => setAktivniZavihek(key as TipZavihka)}
           />
-        </TouchableOpacity>
-      </View>
+        </View>
+      </ScreenHeader>
 
       {aktivniZavihek === 'search' && (
-        <View style={[styles.searchSection, { borderBottomColor: barve.border }]}>
-          <View style={styles.inputRow}>
-            <TextInput
-              style={[styles.input, {
-                backgroundColor: barvnaShema === 'dark' ? barve.card : barve.background,
-                borderColor: barve.border,
-                color: barve.text,
-              }]}
-              value={iskalniNiz}
-              onChangeText={setIskalniNiz}
-              placeholder="Iskanje po uporabniškem imenu"
-              placeholderTextColor={barve.textMuted}
-              onSubmitEditing={obdelajIskanje}
-              returnKeyType="search"
-            />
-            <TouchableOpacity
-              style={[styles.searchButton, { backgroundColor: barve.primary }]}
-              onPress={obdelajIskanje}
-              activeOpacity={0.7}>
-              <IconSymbol name="magnifyingglass" size={20} color={CleanPaceColors.offWhite} />
-            </TouchableOpacity>
-          </View>
-        </View>
+        <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(160)} style={styles.searchSection}>
+          <SearchBar
+            value={iskalniNiz}
+            onChangeText={setIskalniNiz}
+            onSearch={obdelajIskanje}
+            placeholder="Iskanje po uporabniškem imenu"
+          />
+        </Animated.View>
       )}
 
       {nalaganje ? (
@@ -319,20 +242,23 @@ export default function FriendsScreen() {
           <ThemedText type="body" variant="secondary">Nalaganje...</ThemedText>
         </View>
       ) : pridobiPodatkeSeznama().length === 0 ? (
-        <View style={styles.emptyState}>
-          <IconSymbol name="person.2.fill" size={64} color={barve.icon} />
-          <ThemedText type="h3" style={styles.emptyText}>{pridobiPraznoSporocilo()}</ThemedText>
-        </View>
+        <EmptyState
+          icon="person.2.fill"
+          title={pridobiPraznoSporocilo()}
+          ctaLabel={aktivniZavihek !== 'search' ? 'Poišči uporabnike' : undefined}
+          onPressCta={aktivniZavihek !== 'search' ? () => setAktivniZavihek('search') : undefined}
+        />
       ) : (
         <FlatList
           data={pridobiPodatkeSeznama()}
           renderItem={izrisiUporabnika}
           keyExtractor={element => element.id}
-          contentContainerStyle={styles.usersList}
+          contentContainerStyle={[styles.usersList, { paddingBottom: TAB_BAR_HEIGHT + insets.bottom + Spacing.lg }]}
+          ItemSeparatorComponent={() => <View style={listRowDividerStyle} />}
           showsVerticalScrollIndicator={false}
           refreshControl={
             aktivniZavihek !== 'search' ? (
-              <RefreshControl refreshing={osvezevanje} onRefresh={osveziPodatke} />
+              <RefreshControl refreshing={osvezevanje} onRefresh={osveziPodatke} tintColor={AuroraColors.primary} />
             ) : undefined
           }
         />
@@ -344,52 +270,14 @@ export default function FriendsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: 'transparent',
   },
-  header: {
-    paddingTop: 60,
-    paddingBottom: Spacing.md,
-    paddingHorizontal: Spacing.md,
-  },
-  statsRow: {
-    marginTop: Spacing.xs,
-  },
-  tabs: {
-    flexDirection: 'row',
-    padding: Spacing.md,
-    gap: Spacing.sm,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.card,
-    alignItems: 'center',
-    justifyContent: 'center',
+  segmentedWrap: {
+    marginTop: Spacing.sm,
   },
   searchSection: {
-    padding: Spacing.md,
-    paddingTop: 0,
-    borderBottomWidth: 1,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    alignItems: 'center',
-  },
-  input: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: BorderRadius.card,
-    paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.md,
-    fontSize: 16,
-  },
-  searchButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
+    paddingBottom: Spacing.md,
   },
   loadingContainer: {
     flex: 1,
@@ -397,51 +285,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   usersList: {
-    padding: Spacing.md,
-  },
-  userCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: Spacing.md,
-    borderRadius: BorderRadius.card,
-    marginBottom: Spacing.sm,
-  },
-  userInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  userAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: Spacing.sm,
-  },
-  userAvatarPlaceholder: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: Spacing.sm,
-  },
-  userDetails: {
-    flex: 1,
-  },
-  actionButton: {
-    paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.small,
   },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: Spacing.xl,
+  pill: {
+    paddingVertical: Spacing.xs + 2,
+    paddingHorizontal: Spacing.sm + 2,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
   },
-  emptyText: {
-    marginTop: Spacing.md,
-    textAlign: 'center',
+  pillOutline: {
+    backgroundColor: 'transparent',
+    borderColor: AuroraColors.border,
+  },
+  pillFilled: {
+    backgroundColor: AuroraColors.primary,
+    borderColor: AuroraColors.primary,
   },
 });

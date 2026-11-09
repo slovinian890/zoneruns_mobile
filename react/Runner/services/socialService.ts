@@ -14,10 +14,51 @@ import {
 } from './supabase';
 import { getCurrentUser } from './authService';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { File } from 'expo-file-system';
 
 // ============================================
 // FEED / POSTS OPERATIONS
 // ============================================
+
+/**
+ * Upload an image for a feed post (e.g. an exported monthly recap card) to
+ * the 'post-images' bucket and return its public URL. Uploads an ArrayBuffer
+ * (via expo-file-system's File#arrayBuffer) rather than a fetch()-sourced
+ * Blob — supabase-js's storage upload over a React Native Blob is a known
+ * failure mode on Android (throws "Network request failed"), since RN's
+ * Blob isn't a real spec Blob and doesn't survive being re-sent by
+ * storage-js's own fetch call.
+ */
+export const uploadPostImage = async (
+  fileUri: string,
+  mimeType: string = 'image/png'
+): Promise<{ success: boolean; url?: string; error?: string }> => {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return { success: false, error: 'User not authenticated' };
+    }
+
+    const fileExt = mimeType.split('/')[1] || 'png';
+    const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+
+    const arrayBuffer = await new File(fileUri).arrayBuffer();
+
+    const { error: uploadError } = await supabase.storage
+      .from('post-images')
+      .upload(fileName, arrayBuffer, { upsert: true, contentType: mimeType });
+
+    if (uploadError) {
+      return { success: false, error: uploadError.message };
+    }
+
+    const { data: { publicUrl } } = supabase.storage.from('post-images').getPublicUrl(fileName);
+    return { success: true, url: publicUrl };
+  } catch (error) {
+    console.error('Upload post image error:', error);
+    return { success: false, error: 'An unexpected error occurred' };
+  }
+};
 
 /**
  * Get feed posts with author info, paginated.

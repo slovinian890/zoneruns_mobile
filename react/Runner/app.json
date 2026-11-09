@@ -1,19 +1,23 @@
 {
   "expo": {
-    "name": "Runner",
+    "name": "ZoneRuns",
     "slug": "Runner",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
     "scheme": "runner",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.filip90.runner",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app needs access to your location to track your running route.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs access to your location to track your running route.",
         "NSCameraUsageDescription": "This app needs access to your camera to take profile pictures.",
-        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select profile pictures."
+        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select profile pictures.",
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": ["location"]
       },
       "config": {
         "googleMapsApiKey": "AIzaSyDummyKeyForDevelopment"
@@ -22,6 +26,11 @@
     "android": {
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundColor": "#141A0C",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
@@ -36,7 +45,8 @@
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "config": {
         "googleMaps": {
@@ -53,13 +63,24 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location to track your running route."
+          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location to track your running route.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       [
-        "react-native-maps",
+        "expo-splash-screen",
         {
-          "enableGoogleMaps": true
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#141A0C"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#D9603B"
         }
       ]
     ],
@@ -70,14 +91,15 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "d4822763-d692-407b-bc22-cbb6a78e4321"
+        "projectId": "10e5f3e0-4e00-47eb-bd9d-e1d2e8dbf5d3"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
+    "owner": "filip90",
     "updates": {
-      "url": "https://u.expo.dev/d4822763-d692-407b-bc22-cbb6a78e4321"
+      "url": "https://u.expo.dev/10e5f3e0-4e00-47eb-bd9d-e1d2e8dbf5d3"
     }
   }
 }

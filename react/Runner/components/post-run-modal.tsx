@@ -1,17 +1,23 @@
-import { StyleSheet, View, TextInput, TouchableOpacity, Modal, Alert } from 'react-native';
-import { useState } from 'react';
+import { StyleSheet, View, ScrollView, TextInput, TouchableOpacity, Modal, Alert } from 'react-native';
+import { useRef, useState } from 'react';
+import ViewShot from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors, Spacing, BorderRadius } from '@/constants/theme';
+import { AuroraColors, Colors, Spacing, BorderRadius } from '@/constants/theme';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { HexTerritoryPreview } from '@/components/hex-territory-preview';
+import { StatBlock } from '@/components/ui/stat-block';
 import { createPost } from '@/services/socialService';
-import { Run } from '@/services/supabase';
+import { ClaimTerritoryResult, Run } from '@/services/supabase';
 import { intervalToSeconds } from '@/services/runsService';
+import { formatArea } from '@/services/territoryService';
 
 interface PostRunModalProps {
   visible: boolean;
   run: Run | null;
+  territoryResult: ClaimTerritoryResult | null;
   onClose: () => void;
   onPost: () => void;
 }
@@ -19,6 +25,7 @@ interface PostRunModalProps {
 export default function PostRunModal({
   visible,
   run,
+  territoryResult,
   onClose,
   onPost,
 }: PostRunModalProps) {
@@ -26,6 +33,8 @@ export default function PostRunModal({
   const barve = Colors[barvnaShema ?? 'light'];
   const [opis, setOpis] = useState('');
   const [objavljanje, setObjavljanje] = useState(false);
+  const [deljenje, setDeljenje] = useState(false);
+  const kartcaRef = useRef<ViewShot>(null);
 
   // Objavi tek na Feed – pošlje podatke o teku skupaj z opisom na strežnik
   const obdelajObjavo = async () => {
@@ -56,6 +65,27 @@ export default function PostRunModal({
     setObjavljanje(false);
   };
 
+  // Zajemi kartico povzetka kot sliko in jo deli prek sistemskega menija
+  // (Instagram Stories jo med cilji ponudi samodejno za slike).
+  const deliKartico = async () => {
+    if (!kartcaRef.current?.capture) return;
+    setDeljenje(true);
+    try {
+      const uri = await kartcaRef.current.capture();
+      const naVoljo = await Sharing.isAvailableAsync();
+      if (!naVoljo) {
+        Alert.alert('Ni na voljo', 'Deljenje ni podprto na tej napravi');
+        return;
+      }
+      await Sharing.shareAsync(uri);
+    } catch (napaka) {
+      console.error('Napaka pri deljenju kartice:', napaka);
+      Alert.alert('Napaka', 'Deljenje slike ni uspelo');
+    } finally {
+      setDeljenje(false);
+    }
+  };
+
   if (!run) return null;
 
   const oblikujTrajanje = (interval: string | null): string => {
@@ -65,6 +95,10 @@ export default function PostRunModal({
     const sek = sekunde % 60;
     return `${minute}:${sek.toString().padStart(2, '0')}`;
   };
+
+  const imaPot = (run.route_data?.coordinates?.length ?? 0) > 1;
+  const ozemljeZaseženo = !!territoryResult?.success;
+  const ukradenoSkupaj = (territoryResult?.stolen ?? []).reduce((v, s) => v + s.area_m2, 0);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -78,36 +112,75 @@ export default function PostRunModal({
             </TouchableOpacity>
           </View>
 
-          <View style={styles.content}>
-            {/* Povzetek teka */}
-            <View style={[styles.runSummary, { backgroundColor: barve.primary + '10' }]}>
-              <View style={styles.summaryRow}>
-                <ThemedText style={styles.summaryLabel}>Razdalja:</ThemedText>
-                <ThemedText style={[styles.summaryValue, { color: barve.primary }]}>
-                  {run.distance_km.toFixed(2)} km
-                </ThemedText>
-              </View>
-              <View style={styles.summaryRow}>
-                <ThemedText style={styles.summaryLabel}>Trajanje:</ThemedText>
-                <ThemedText style={[styles.summaryValue, { color: barve.primary }]}>
-                  {oblikujTrajanje(run.duration)}
-                </ThemedText>
-              </View>
-              <View style={styles.summaryRow}>
-                <ThemedText style={styles.summaryLabel}>Tempo:</ThemedText>
-                <ThemedText style={[styles.summaryValue, { color: barve.primary }]}>
-                  {run.pace ?? '0:00'} /km
-                </ThemedText>
-              </View>
+          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            {/* Kartica povzetka — zajeta za deljenje (Instagram Stories ipd.) */}
+            <View style={styles.shareCardHeaderRow}>
+              <ThemedText type="bodyBold">Povzetek teka</ThemedText>
+              <TouchableOpacity
+                onPress={deliKartico}
+                disabled={deljenje}
+                style={[styles.shareIconButton, deljenje && { opacity: 0.6 }]}
+                activeOpacity={0.7}>
+                <IconSymbol name="square.and.arrow.up" size={16} color={AuroraColors.primary} />
+              </TouchableOpacity>
             </View>
 
-            {/* Info: ozemlja se samodejno posodobi */}
-            <View style={[styles.infoBox, { backgroundColor: barve.primary + '08', borderColor: barve.primary + '20' }]}>
-              <IconSymbol name="hexagon.fill" size={18} color={barve.primary} />
-              <ThemedText type="caption" variant="muted" style={{ flex: 1 }}>
-                Vaše ozemeljske ploščice se samodejno posodobijo iz vaših tekov. Pritisnite Tekmuj za ogled zemljevida!
-              </ThemedText>
-            </View>
+            <ViewShot ref={kartcaRef} options={{ format: 'png', quality: 0.95 }} style={styles.shareCardWrap}>
+              <View style={styles.shareCard}>
+                <ThemedText type="caption" variant="muted" style={styles.shareCardDate}>
+                  {(run.title || '').toUpperCase()}
+                </ThemedText>
+
+                {imaPot && (
+                  <View style={styles.shareCardMap}>
+                    <HexTerritoryPreview
+                      route={run.route_data!}
+                      trailColor={run.route_data?.trailColor}
+                      seed={run.id}
+                      height={280}
+                    />
+                  </View>
+                )}
+
+                <View style={styles.heroStat}>
+                  <ThemedText type="h1" style={styles.heroValue}>{run.distance_km.toFixed(2)}</ThemedText>
+                  <ThemedText type="caption" variant="muted" style={styles.heroLabel}>KILOMETROV</ThemedText>
+                </View>
+
+                <StatBlock
+                  stats={[
+                    { value: oblikujTrajanje(run.duration), label: 'čas' },
+                    { value: run.pace ?? '0:00', label: 'tempo/km' },
+                  ]}
+                />
+
+                {ozemljeZaseženo ? (
+                  <View style={styles.zoneStatsWrap}>
+                    <StatBlock
+                      stats={
+                        ukradenoSkupaj > 0
+                          ? [
+                              { value: formatArea(territoryResult!.claimed_area_m2 ?? 0), label: 'pridobljeno' },
+                              { value: formatArea(ukradenoSkupaj), label: 'ukradeno' },
+                            ]
+                          : [{ value: formatArea(territoryResult!.claimed_area_m2 ?? 0), label: 'ozemlje pridobljeno' }]
+                      }
+                    />
+                  </View>
+                ) : (
+                  <ThemedText type="caption" variant="muted" style={styles.noZoneHint}>
+                    {!territoryResult || territoryResult.reason === 'loop_not_closed'
+                      ? 'Sklenite zanko nazaj do začetka, da zasežete ozemlje'
+                      : 'Zaseg ozemlja ni uspel'}
+                  </ThemedText>
+                )}
+
+                <View style={styles.brandingRow}>
+                  <IconSymbol name="hexagon.fill" size={12} color={AuroraColors.primary} />
+                  <ThemedText type="caption" variant="muted">ZoneRuns</ThemedText>
+                </View>
+              </View>
+            </ViewShot>
 
             {/* Vnos opisa */}
             <View style={styles.inputContainer}>
@@ -146,7 +219,7 @@ export default function PostRunModal({
             <TouchableOpacity style={styles.skipButton} onPress={onClose}>
               <ThemedText style={[styles.skipButtonText, { color: barve.icon }]}>Preskoči</ThemedText>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         </ThemedView>
       </View>
     </Modal>
@@ -180,33 +253,74 @@ const styles = StyleSheet.create({
   content: {
     padding: 20,
   },
-  runSummary: {
-    padding: 16,
-    borderRadius: BorderRadius.card,
-    marginBottom: Spacing.md,
-  },
-  summaryRow: {
+  shareCardHeaderRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+  },
+  shareIconButton: {
+    width: 34,
+    height: 34,
+    borderRadius: BorderRadius.full,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: AuroraColors.border,
+    backgroundColor: AuroraColors.surfaceSolid,
   },
-  summaryLabel: {
-    fontSize: 14,
-    opacity: 0.7,
+  shareCardWrap: {
+    marginBottom: Spacing.md,
   },
-  summaryValue: {
-    fontSize: 16,
-    fontWeight: '600',
+  shareCard: {
+    backgroundColor: AuroraColors.bgElevated,
+    borderRadius: BorderRadius.large,
+    borderWidth: 1,
+    borderColor: AuroraColors.border,
+    padding: Spacing.lg,
   },
-  infoBox: {
+  shareCardDate: {
+    textAlign: 'center',
+    letterSpacing: 1,
+    marginBottom: Spacing.sm,
+  },
+  shareCardMap: {
+    borderRadius: BorderRadius.card,
+    overflow: 'hidden',
+    marginBottom: Spacing.lg,
+  },
+  heroStat: {
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  heroValue: {
+    fontSize: 56,
+    letterSpacing: -1,
+    textAlign: 'center',
+  },
+  heroLabel: {
+    letterSpacing: 2,
+    marginTop: -4,
+  },
+  zoneStatsWrap: {
+    marginTop: Spacing.md,
+    paddingTop: Spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: AuroraColors.border,
+  },
+  noZoneHint: {
+    textAlign: 'center',
+    marginTop: Spacing.md,
+    paddingTop: Spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: AuroraColors.border,
+  },
+  brandingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.card,
-    borderWidth: 1,
-    marginBottom: Spacing.md,
+    justifyContent: 'center',
+    gap: 4,
+    marginTop: Spacing.lg,
   },
   inputContainer: {
     marginBottom: 20,
