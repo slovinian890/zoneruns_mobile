@@ -4,13 +4,22 @@ import Svg, { Circle, Polygon, Polyline } from 'react-native-svg';
 
 import { AuroraColors } from '@/constants/theme';
 import { RouteData } from '@/services/supabase';
+import { isLoopReady, projectRoute } from '@/services/territoryService';
 
 interface HexTerritoryPreviewProps {
   route: RouteData;
   trailColor?: string;
   height?: number;
-  /** Deterministic seed so the same run always renders the same hex pattern. */
+  /** Deterministic seed so the same run always renders the same hex texture. */
   seed?: string;
+  /**
+   * Whether this run actually closed a loop and claimed territory. When
+   * known (e.g. the post-run screen has the real claim result), pass it
+   * explicitly. When omitted (e.g. the run history list, which has no claim
+   * result handy), it falls back to the same closed-loop geometry check the
+   * server uses (`isLoopReady`) so the shown shape still matches reality.
+   */
+  claimed?: boolean;
 }
 
 // Small deterministic PRNG (mulberry32) so a given run's hex art is stable
@@ -46,15 +55,15 @@ function hexPoints(cx: number, cy: number, r: number): string {
   return pts.join(' ');
 }
 
-const ZONE_COLORS = {
-  mine: [AuroraColors.primary, AuroraColors.accentAmber],
-  rival: [AuroraColors.accentForest, AuroraColors.accentTerracotta],
-} as const;
-
-export function HexTerritoryPreview({ route, trailColor, height = 160, seed }: HexTerritoryPreviewProps) {
+export function HexTerritoryPreview({ route, trailColor, height = 160, seed, claimed }: HexTerritoryPreviewProps) {
   const coords = route.coordinates ?? [];
   const lineColor = trailColor || route.trailColor || AuroraColors.primary;
   const rngSeed = hashString(seed ?? JSON.stringify(coords.slice(0, 3)));
+  // Same closed-loop rule the server applies when claiming territory (see
+  // claim_territory_from_run in supabase/migrations/002_territory_system.sql)
+  // so a run with no claim result handy still only shows a fill when it
+  // would actually have been claimed, not for every path drawn.
+  const isClaimed = claimed ?? isLoopReady(coords);
 
   const content = useMemo(() => {
     const W = 400; // viewBox width — the SVG scales to fill the container
@@ -66,64 +75,37 @@ export function HexTerritoryPreview({ route, trailColor, height = 160, seed }: H
     const cols = Math.ceil(W / hexW) + 2;
     const rows = Math.ceil(H / rowH) + 2;
 
-    // Two soft "claimed territory" cluster centers, placed deterministically.
-    const clusterA = { x: W * (0.25 + rng() * 0.25), y: H * (0.3 + rng() * 0.3) };
-    const clusterB = { x: W * (0.6 + rng() * 0.3), y: H * (0.4 + rng() * 0.4) };
-    const clusterRadius = Math.min(W, H) * 0.32;
-
-    const hexes: { key: string; points: string; fill: string; opacity: number }[] = [];
+    // Plain background texture (graph-paper style) — every hex gets the same
+    // neutral fill with a slight opacity jitter for texture only. It no
+    // longer stands in for "claimed territory": that's drawn below as the
+    // real captured polygon, not a randomly placed cluster.
+    const hexes: { key: string; points: string; opacity: number }[] = [];
     for (let row = -1; row < rows; row++) {
       for (let col = -1; col < cols; col++) {
         const cx = col * hexW + (row % 2 !== 0 ? hexW / 2 : 0);
         const cy = row * rowH;
         if (cx < -hexW || cx > W + hexW || cy < -HEX_R || cy > H + HEX_R) continue;
 
-        const dA = Math.hypot(cx - clusterA.x, cy - clusterA.y);
-        const dB = Math.hypot(cx - clusterB.x, cy - clusterB.y);
-        const jitter = rng();
-
-        let fill = AuroraColors.surface;
-        let opacity = 0.35;
-
-        if (dA < clusterRadius && jitter > 0.22) {
-          fill = ZONE_COLORS.mine[jitter > 0.6 ? 0 : 1];
-          opacity = 0.55 + (1 - dA / clusterRadius) * 0.3;
-        } else if (dB < clusterRadius * 0.8 && jitter > 0.3) {
-          fill = ZONE_COLORS.rival[jitter > 0.65 ? 0 : 1];
-          opacity = 0.4 + (1 - dB / (clusterRadius * 0.8)) * 0.3;
-        }
-
-        hexes.push({ key: `${row}-${col}`, points: hexPoints(cx, cy, HEX_R - 1.5), fill, opacity });
+        hexes.push({ key: `${row}-${col}`, points: hexPoints(cx, cy, HEX_R - 1.5), opacity: 0.12 + rng() * 0.08 });
       }
     }
 
-    // Project the real route into the same viewBox so it reads as "this hex
-    // territory, with your run drawn through it" rather than a fake map.
+    // Project the real route into the same viewBox so both the line and the
+    // claimed-area fill below are the actual run shape, not a fake map.
     let polyline = '';
+    let polygon = '';
     let endPoint: { x: number; y: number } | null = null;
-    if (coords.length > 1) {
-      const lats = coords.map((c) => c.latitude);
-      const lngs = coords.map((c) => c.longitude);
-      const minLat = Math.min(...lats);
-      const maxLat = Math.max(...lats);
-      const minLng = Math.min(...lngs);
-      const maxLng = Math.max(...lngs);
-      const padding = 28;
-      const spanLat = maxLat - minLat || 1;
-      const spanLng = maxLng - minLng || 1;
-      const scale = Math.min((W - padding * 2) / spanLng, (H - padding * 2) / spanLat);
-      const offX = (W - spanLng * scale) / 2;
-      const offY = (H - spanLat * scale) / 2;
-
-      const projected = coords.map((c) => ({
-        x: offX + (c.longitude - minLng) * scale,
-        y: H - (offY + (c.latitude - minLat) * scale), // flip: lat up = y down
-      }));
-      polyline = projected.map((p) => `${p.x},${p.y}`).join(' ');
+    const projected = projectRoute(coords, W, H);
+    if (projected.length > 1) {
+      const pointsStr = projected.map((p) => `${p.x},${p.y}`).join(' ');
+      polyline = pointsStr;
+      // Same ring the server builds in claim_territory_from_run (the path,
+      // closed back to its own start) — <Polygon> closes it automatically.
+      polygon = pointsStr;
       endPoint = projected[projected.length - 1];
     }
 
-    return { W, H, hexes, polyline, endPoint };
+    return { W, H, hexes, polyline, polygon, endPoint };
   }, [coords, height, rngSeed]);
 
   return (
@@ -131,8 +113,11 @@ export function HexTerritoryPreview({ route, trailColor, height = 160, seed }: H
       <Svg width="100%" height="100%" viewBox={`0 0 ${content.W} ${content.H}`} preserveAspectRatio="xMidYMid slice">
         <Polygon points={`0,0 ${content.W},0 ${content.W},${content.H} 0,${content.H}`} fill={AuroraColors.mapBase} />
         {content.hexes.map((h) => (
-          <Polygon key={h.key} points={h.points} fill={h.fill} opacity={h.opacity} stroke={AuroraColors.background} strokeWidth={1.5} />
+          <Polygon key={h.key} points={h.points} fill={AuroraColors.surface} opacity={h.opacity} stroke={AuroraColors.background} strokeWidth={1.5} />
         ))}
+        {isClaimed && content.polygon && (
+          <Polygon points={content.polygon} fill={lineColor} fillOpacity={0.32} stroke={lineColor} strokeWidth={2} strokeOpacity={0.7} />
+        )}
         {content.polyline && (
           <>
             <Polyline points={content.polyline} fill="none" stroke={lineColor} strokeWidth={7} strokeOpacity={0.25} strokeLinecap="round" strokeLinejoin="round" />

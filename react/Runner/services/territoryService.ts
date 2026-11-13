@@ -110,6 +110,44 @@ export function distanceMeters(
   return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
 }
 
+export interface ProjectedPoint {
+  x: number;
+  y: number;
+}
+
+/**
+ * Projects real lat/lng coordinates into a flat width×height box — the same
+ * simple equirectangular (min/max bounding box) projection used by both
+ * hex-territory-preview.tsx and the replay screen, so a run's drawn path
+ * and its filled polygon always land in the exact same spots pixel-for-
+ * pixel, regardless of which screen is doing the drawing.
+ */
+export function projectRoute(
+  coords: Array<{ latitude: number; longitude: number }>,
+  width: number,
+  height: number,
+  padding = 28,
+): ProjectedPoint[] {
+  if (coords.length < 2) return [];
+
+  const lats = coords.map((c) => c.latitude);
+  const lngs = coords.map((c) => c.longitude);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  const spanLat = maxLat - minLat || 1;
+  const spanLng = maxLng - minLng || 1;
+  const scale = Math.min((width - padding * 2) / spanLng, (height - padding * 2) / spanLat);
+  const offX = (width - spanLng * scale) / 2;
+  const offY = (height - spanLat * scale) / 2;
+
+  return coords.map((c) => ({
+    x: offX + (c.longitude - minLng) * scale,
+    y: height - (offY + (c.latitude - minLat) * scale), // flip: lat up = y down
+  }));
+}
+
 /**
  * True once the live route has gone far enough out AND the current point
  * has come back close enough to the start to be claimable as a loop.

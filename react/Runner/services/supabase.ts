@@ -96,6 +96,9 @@ export interface Run {
   avg_heart_rate?: number | null;
   max_heart_rate?: number | null;
   notes?: string | null;
+  // Ghost runs still steal territory normally — victims just aren't sent
+  // an attack notification for it (see claim_territory_from_run).
+  is_ghost?: boolean | null;
 }
 
 export interface UserStats {
@@ -211,6 +214,7 @@ export interface CreateRunInput {
   avg_heart_rate?: number;
   max_heart_rate?: number;
   notes?: string;
+  is_ghost?: boolean;
 }
 
 export interface UpdateRunInput extends Partial<CreateRunInput> {}
@@ -247,10 +251,12 @@ export interface TerritoryFeature {
 /** Result of the claim_territory_from_run RPC */
 export interface ClaimTerritoryResult {
   success: boolean;
-  reason?: 'already_claimed' | 'run_not_found' | 'not_owner' | 'too_few_points' | 'loop_not_closed' | 'invalid_polygon' | 'area_too_small';
+  reason?: 'already_claimed' | 'run_not_found' | 'not_owner' | 'too_few_points' | 'loop_not_closed' | 'invalid_polygon' | 'area_too_small' | 'daily_limit_reached';
   gap_m?: number;
   area_m2?: number;
   claimed_area_m2?: number;
+  /** Enemy hexes hit hard enough to knock down a defense level, but not enough to flip — see migration 012. */
+  weakened_count?: number;
   total_area_m2?: number;
   stolen?: Array<{ user_id: string; area_m2: number; zones_lost: number }>;
 }
@@ -285,7 +291,8 @@ export interface HeroActionResult {
 // COINS
 // ============================================
 
-/** One row from coin_transactions — a single run's coin payout. */
+/** One row from coin_transactions — a single run's coin payout, or a daily
+ * login bonus when run_id is null. */
 export interface CoinTransaction {
   id: string;
   user_id: string;
@@ -293,6 +300,14 @@ export interface CoinTransaction {
   amount: number;
   distance_km: number;
   created_at: string;
+}
+
+/** Result of the claim_daily_login RPC. */
+export interface ClaimDailyLoginResult {
+  success: boolean;
+  reason?: 'not_authenticated' | 'already_claimed';
+  coins_awarded?: number;
+  streak?: number;
 }
 
 // ============================================

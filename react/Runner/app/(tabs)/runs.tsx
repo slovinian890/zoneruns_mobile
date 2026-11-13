@@ -110,9 +110,15 @@ export default function RunsScreen() {
         </View>
 
         {item.route_data && item.route_data.coordinates?.length > 1 && (
-          <View style={styles.mapPreviewWrap}>
+          <TouchableOpacity
+            style={styles.mapPreviewWrap}
+            activeOpacity={0.85}
+            onPress={() => usmerjevalnik.push(`/replay?runId=${item.id}`)}>
             <HexTerritoryPreview route={item.route_data} trailColor={item.route_data.trailColor} seed={item.id} />
-          </View>
+            <View style={styles.replayBadge}>
+              <IconSymbol name="play.fill" size={12} color={AuroraColors.text} />
+            </View>
+          </TouchableOpacity>
         )}
 
         <StatBlock
@@ -223,6 +229,18 @@ const styles = StyleSheet.create({
   },
   mapPreviewWrap: {
     marginBottom: Spacing.md,
+    position: 'relative',
+  },
+  replayBadge: {
+    position: 'absolute',
+    right: Spacing.sm,
+    bottom: Spacing.sm,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   extraStats: {
     flexDirection: 'row',

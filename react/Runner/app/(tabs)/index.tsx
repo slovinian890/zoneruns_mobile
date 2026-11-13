@@ -101,6 +101,10 @@ export default function HomeScreen() {
   const [pot, setPot] = useState<Array<{ latitude: number; longitude: number }>>([]);
   const [shranjevanje, setShranjevanje] = useState(false);
   const [pavzirano, setPavzirano] = useState(false);
+  // Ghost tek: izbran pred začetkom, velja za celoten tek, ki sledi — žrtvam
+  // ukradenega ozemlja ne pošlje "pod napadom" obvestila (glej
+  // claim_territory_from_run), tek sam in zaseg ozemlja pa potekata enako.
+  const [duhTek, setDuhTek] = useState(false);
 
   // ── Reference ──
   const narocninaLokacije = useRef<Location.LocationSubscription | null>(null);
@@ -355,6 +359,8 @@ export default function HomeScreen() {
       Alert.alert('Ozemlje zaseženo! 🏴', sporocilo);
     } else if (rezultat.reason === 'loop_not_closed') {
       // Tiho – tek ni bil zanka, ni razloga za opozorilo ob vsakem teku
+    } else if (rezultat.reason === 'daily_limit_reached') {
+      Alert.alert('Že ste zasegli ozemlje danes', 'Zaseg ozemlja je mogoč enkrat na dan. Poskusite znova jutri.');
     }
   }, []);
 
@@ -371,6 +377,7 @@ export default function HomeScreen() {
       pavziranoRef.current = false;
       pavzaZacetekRef.current = null;
       setPavzirano(false);
+      setDuhTek(false);
       return;
     }
 
@@ -412,6 +419,7 @@ export default function HomeScreen() {
         pace: tempo,
         calories: Math.round(razdalja * 60),
         route_data: podatkiPoti,
+        is_ghost: duhTek,
       });
 
       if (rezultat.success) {
@@ -450,6 +458,7 @@ export default function HomeScreen() {
         pavziranoRef.current = false;
         pavzaZacetekRef.current = null;
         setPavzirano(false);
+        setDuhTek(false);
       } else {
         Alert.alert('Napaka', rezultat.error || 'Shranjevanje teka ni uspelo');
       }
@@ -459,7 +468,7 @@ export default function HomeScreen() {
     } finally {
       setShranjevanje(false);
     }
-  }, [trajanje, razdalja, pot, barvaSled, prikaziRezultatOzemlja]);
+  }, [trajanje, razdalja, pot, barvaSled, duhTek, prikaziRezultatOzemlja]);
 
   // ── Premor & nadaljevanje teka ──
   // Pavza samo ustavi časovnik/GPS obdelavo (prek pavziranoRef) — ozadnje
@@ -753,21 +762,39 @@ export default function HomeScreen() {
         <BlurView intensity={24} tint="dark" style={StyleSheet.absoluteFillObject} />
         <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, styles.headerTint]} />
         {nacin === 'idle' ? (
-          <View style={styles.buttonRow}>
-            <GradientButton
-              label="Začni tek"
-              icon="play.fill"
-              onPress={zacniTek}
-              variant="primary"
-              style={{ flex: 1 }}
-            />
-            <GradientButton
-              label="Tekmuj"
-              icon="hexagon.fill"
-              onPress={obdelajTekmovanje}
-              variant="outline"
-            />
-          </View>
+          <>
+            <TouchableOpacity
+              onPress={() => setDuhTek((v) => !v)}
+              style={[styles.ghostToggle, duhTek ? styles.ghostToggleActive : styles.ghostToggleInactive]}>
+              <IconSymbol
+                name="ghost.fill"
+                size={16}
+                color={duhTek ? AuroraColors.onPrimary : AuroraColors.textMuted}
+              />
+              <ThemedText
+                type="caption"
+                lightColor={duhTek ? AuroraColors.onPrimary : undefined}
+                darkColor={duhTek ? AuroraColors.onPrimary : undefined}
+                variant={duhTek ? undefined : 'muted'}>
+                {duhTek ? 'Ghost tek — žrtve ne bodo obveščene' : 'Ghost tek'}
+              </ThemedText>
+            </TouchableOpacity>
+            <View style={styles.buttonRow}>
+              <GradientButton
+                label="Začni tek"
+                icon="play.fill"
+                onPress={zacniTek}
+                variant="primary"
+                style={{ flex: 1 }}
+              />
+              <GradientButton
+                label="Tekmuj"
+                icon="hexagon.fill"
+                onPress={obdelajTekmovanje}
+                variant="outline"
+              />
+            </View>
+          </>
         ) : (
           <View style={styles.buttonRow}>
             <GradientButton
@@ -892,5 +919,22 @@ const styles = StyleSheet.create({
   buttonRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
+  },
+  ghostToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    borderRadius: 9999,
+    paddingVertical: 10,
+    marginBottom: Spacing.sm,
+  },
+  ghostToggleActive: {
+    backgroundColor: AuroraColors.textMuted,
+  },
+  ghostToggleInactive: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: AuroraColors.border,
   },
 });

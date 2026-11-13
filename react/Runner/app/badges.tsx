@@ -150,7 +150,8 @@ export default function BadgesScreen() {
                 {zgodovinaKovancev.slice(0, 3).map((tx) => (
                   <View key={tx.id} style={styles.coinHistoryRow}>
                     <ThemedText type="bodySmall" variant="muted">
-                      {new Date(tx.created_at).toLocaleDateString('sl-SI')} · {tx.distance_km.toFixed(1)} km tek
+                      {new Date(tx.created_at).toLocaleDateString('sl-SI')} ·{' '}
+                      {tx.run_id ? `${tx.distance_km.toFixed(1)} km tek` : 'dnevna nagrada'}
                     </ThemedText>
                     <ThemedText type="bodySmall" lightColor={AuroraColors.accentAmber} darkColor={AuroraColors.accentAmber}>
                       +{tx.amount}

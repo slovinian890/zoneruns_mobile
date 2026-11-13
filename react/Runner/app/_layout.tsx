@@ -8,6 +8,7 @@ import 'react-native-reanimated';
 import AuthGuard from '@/components/auth-guard';
 import { AmbientBackgroundProvider } from '@/components/ambient-background';
 import { AttackAlertProvider } from '@/components/attack-alert-provider';
+import { DailyLoginProvider } from '@/components/daily-login-provider';
 import { AuroraColors } from '@/constants/theme';
 // Registers the background-location task at module load, before any
 // screen mounts — required so Android/iOS can wake it while backgrounded.
@@ -60,26 +61,29 @@ export default function RootLayout() {
       <ThemeProvider value={AppNavigationTheme}>
         <AmbientBackgroundProvider>
           <AuthGuard>
-            <AttackAlertProvider>
-              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
-                <Stack.Screen name="signin" options={{ presentation: 'fullScreenModal' }} />
-                <Stack.Screen name="verify" options={{ presentation: 'fullScreenModal' }} />
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-                <Stack.Screen name="user-profile" options={{ headerShown: false }} />
-                <Stack.Screen name="messages" options={{ headerShown: false }} />
-                <Stack.Screen name="chat" options={{ headerShown: false }} />
-                <Stack.Screen name="groups" options={{ headerShown: false }} />
-                <Stack.Screen name="create-group" options={{ headerShown: false }} />
-                <Stack.Screen name="group-detail" options={{ headerShown: false }} />
-                <Stack.Screen name="group-chat" options={{ headerShown: false }} />
-                <Stack.Screen name="analytics" options={{ headerShown: false }} />
-                <Stack.Screen name="badges" options={{ headerShown: false }} />
-                <Stack.Screen name="leaderboard" options={{ headerShown: false }} />
-                <Stack.Screen name="heroes" options={{ headerShown: false }} />
-              </Stack>
-              <StatusBar style="light" />
-            </AttackAlertProvider>
+            <DailyLoginProvider>
+              <AttackAlertProvider>
+                <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
+                  <Stack.Screen name="signin" options={{ presentation: 'fullScreenModal' }} />
+                  <Stack.Screen name="verify" options={{ presentation: 'fullScreenModal' }} />
+                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                  <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+                  <Stack.Screen name="user-profile" options={{ headerShown: false }} />
+                  <Stack.Screen name="messages" options={{ headerShown: false }} />
+                  <Stack.Screen name="chat" options={{ headerShown: false }} />
+                  <Stack.Screen name="groups" options={{ headerShown: false }} />
+                  <Stack.Screen name="create-group" options={{ headerShown: false }} />
+                  <Stack.Screen name="group-detail" options={{ headerShown: false }} />
+                  <Stack.Screen name="group-chat" options={{ headerShown: false }} />
+                  <Stack.Screen name="analytics" options={{ headerShown: false }} />
+                  <Stack.Screen name="badges" options={{ headerShown: false }} />
+                  <Stack.Screen name="leaderboard" options={{ headerShown: false }} />
+                  <Stack.Screen name="heroes" options={{ headerShown: false }} />
+                  <Stack.Screen name="replay" options={{ headerShown: false }} />
+                </Stack>
+                <StatusBar style="light" />
+              </AttackAlertProvider>
+            </DailyLoginProvider>
           </AuthGuard>
         </AmbientBackgroundProvider>
       </ThemeProvider>

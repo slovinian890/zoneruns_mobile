@@ -1,5 +1,6 @@
 import { StyleSheet, View, ScrollView, TextInput, TouchableOpacity, Modal, Alert } from 'react-native';
 import { useRef, useState } from 'react';
+import { useRouter } from 'expo-router';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import { ThemedView } from '@/components/themed-view';
@@ -13,16 +14,7 @@ import { createPost } from '@/services/socialService';
 import { ClaimTerritoryResult, Run } from '@/services/supabase';
 import { intervalToSeconds } from '@/services/runsService';
 import { formatArea } from '@/services/territoryService';
-
-// Slovenian noun declension for "kovanec" (coin) isn't a simple suffix swap
-// (kovanec → kovanca, not "kovanekca"), so this spells out the four forms
-// instead of guessing one from a stem.
-function besedaZaKovance(n: number): string {
-  if (n === 1) return 'kovanec';
-  if (n === 2) return 'kovanca';
-  if (n === 3 || n === 4) return 'kovanci';
-  return 'kovancev';
-}
+import { besedaZaKovance } from '@/services/coinsService';
 
 interface PostRunModalProps {
   visible: boolean;
@@ -43,6 +35,7 @@ export default function PostRunModal({
 }: PostRunModalProps) {
   const barvnaShema = useColorScheme();
   const barve = Colors[barvnaShema ?? 'light'];
+  const usmerjevalnik = useRouter();
   const [opis, setOpis] = useState('');
   const [objavljanje, setObjavljanje] = useState(false);
   const [deljenje, setDeljenje] = useState(false);
@@ -128,13 +121,26 @@ export default function PostRunModal({
             {/* Kartica povzetka — zajeta za deljenje (Instagram Stories ipd.) */}
             <View style={styles.shareCardHeaderRow}>
               <ThemedText type="bodyBold">Povzetek teka</ThemedText>
-              <TouchableOpacity
-                onPress={deliKartico}
-                disabled={deljenje}
-                style={[styles.shareIconButton, deljenje && { opacity: 0.6 }]}
-                activeOpacity={0.7}>
-                <IconSymbol name="square.and.arrow.up" size={16} color={AuroraColors.primary} />
-              </TouchableOpacity>
+              <View style={styles.shareCardHeaderActions}>
+                {imaPot && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      onClose();
+                      usmerjevalnik.push(`/replay?runId=${run.id}`);
+                    }}
+                    style={styles.shareIconButton}
+                    activeOpacity={0.7}>
+                    <IconSymbol name="play.fill" size={14} color={AuroraColors.primary} />
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  onPress={deliKartico}
+                  disabled={deljenje}
+                  style={[styles.shareIconButton, deljenje && { opacity: 0.6 }]}
+                  activeOpacity={0.7}>
+                  <IconSymbol name="square.and.arrow.up" size={16} color={AuroraColors.primary} />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <ViewShot ref={kartcaRef} options={{ format: 'png', quality: 0.95 }} style={styles.shareCardWrap}>
@@ -150,6 +156,7 @@ export default function PostRunModal({
                       trailColor={run.route_data?.trailColor}
                       seed={run.id}
                       height={280}
+                      claimed={ozemljeZaseženo}
                     />
                   </View>
                 )}
@@ -178,21 +185,25 @@ export default function PostRunModal({
                 {ozemljeZaseženo ? (
                   <View style={styles.zoneStatsWrap}>
                     <StatBlock
-                      stats={
-                        ukradenoSkupaj > 0
-                          ? [
-                              { value: formatArea(territoryResult!.claimed_area_m2 ?? 0), label: 'pridobljeno' },
-                              { value: formatArea(ukradenoSkupaj), label: 'ukradeno' },
-                            ]
-                          : [{ value: formatArea(territoryResult!.claimed_area_m2 ?? 0), label: 'ozemlje pridobljeno' }]
-                      }
+                      stats={[
+                        {
+                          value: formatArea(territoryResult!.claimed_area_m2 ?? 0),
+                          label: ukradenoSkupaj > 0 ? 'pridobljeno' : 'ozemlje pridobljeno',
+                        },
+                        ...(ukradenoSkupaj > 0 ? [{ value: formatArea(ukradenoSkupaj), label: 'ukradeno' }] : []),
+                        ...(territoryResult!.weakened_count
+                          ? [{ value: String(territoryResult!.weakened_count), label: 'oslabljeno' }]
+                          : []),
+                      ]}
                     />
                   </View>
                 ) : (
                   <ThemedText type="caption" variant="muted" style={styles.noZoneHint}>
-                    {!territoryResult || territoryResult.reason === 'loop_not_closed'
-                      ? 'Sklenite zanko nazaj do začetka, da zasežete ozemlje'
-                      : 'Zaseg ozemlja ni uspel'}
+                    {territoryResult?.reason === 'daily_limit_reached'
+                      ? 'Ozemlje lahko zasežete enkrat na dan — poskusite jutri'
+                      : !territoryResult || territoryResult.reason === 'loop_not_closed'
+                        ? 'Sklenite zanko nazaj do začetka, da zasežete ozemlje'
+                        : 'Zaseg ozemlja ni uspel'}
                   </ThemedText>
                 )}
 
@@ -282,6 +293,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: Spacing.sm,
+  },
+  shareCardHeaderActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
   },
   shareIconButton: {
     width: 34,

@@ -57,6 +57,7 @@ const ICON_MAPPING: Record<string, IconConfig> = {
   'camera.fill': { library: 'fa', name: 'camera' },
   'photo.fill': { library: 'fa', name: 'image' },
   'trash.fill': { library: 'fa', name: 'trash' },
+  'ghost.fill': { library: 'fa5', name: 'ghost' },
   
   // Auth & Security
   'envelope.fill': { library: 'fa', name: 'envelope' },
