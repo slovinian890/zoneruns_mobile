@@ -18,9 +18,11 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { getCurrentProfile, updateProfile, uploadAvatar } from '@/services/profileService';
 import { getCurrentUserStats } from '@/services/statsService';
 import { signOut } from '@/services/authService';
-import { Profile, UserStats } from '@/services/supabase';
+import { Profile, UserStats, MyHero } from '@/services/supabase';
 import { TRAIL_COLORS, getTrailColor, setTrailColor as shraniBarvoSledi, DEFAULT_TRAIL_COLOR } from '@/services/trailColorService';
 import { getMyTerritoryStats, formatArea } from '@/services/territoryService';
+import { getMyHeroes } from '@/services/heroesService';
+import { HeroSprite } from '@/components/hero-sprite';
 
 export default function ProfileScreen() {
   useAmbientVariant('default');
@@ -35,6 +37,7 @@ export default function ProfileScreen() {
   const [shranjevanje, setShranjevanje] = useState(false);
   const [izbranaBarvaSled, setIzbranaBarvaSled] = useState(DEFAULT_TRAIL_COLOR);
   const [povrsinaOzemlja, setPovrsinaOzemlja] = useState(0);
+  const [aktivniJunak, setAktivniJunak] = useState<MyHero | null>(null);
   const usmerjevalnik = useRouter();
 
   // Animacija dihanja za profilno sliko
@@ -63,6 +66,7 @@ export default function ProfileScreen() {
       naloziStatistiko();
       getTrailColor().then(setIzbranaBarvaSled);
       getMyTerritoryStats().then((s) => setPovrsinaOzemlja(s.areaM2));
+      getMyHeroes().then((junaki) => setAktivniJunak(junaki.find((j) => j.is_active) ?? null));
     }, [])
   );
 
@@ -236,27 +240,43 @@ export default function ProfileScreen() {
         contentContainerStyle={{ paddingBottom: TAB_BAR_HEIGHT + insets.bottom + Spacing.lg }}
         showsVerticalScrollIndicator={false}>
         <View style={styles.profileSection}>
-          <TouchableOpacity onPress={prikaziIzbirnikSlik} style={styles.imageContainer} activeOpacity={0.7} disabled={shranjevanje}>
-            <Animated.View
-              style={[
-                styles.breathingRing,
-                {
-                  backgroundColor: AuroraColors.primarySoft,
-                  transform: [{ scale: dihalniPulz }],
-                }
-              ]}
-            />
-            {slikaProfilaUrl ? (
-              <Image source={{ uri: slikaProfilaUrl }} style={styles.profileImage} />
-            ) : (
-              <View style={styles.profileImagePlaceholder}>
-                <IconSymbol name="person.fill" size={48} color={AuroraColors.primary} />
+          <View style={styles.avatarRow}>
+            <TouchableOpacity onPress={prikaziIzbirnikSlik} style={styles.imageContainer} activeOpacity={0.7} disabled={shranjevanje}>
+              <Animated.View
+                style={[
+                  styles.breathingRing,
+                  {
+                    backgroundColor: AuroraColors.primarySoft,
+                    transform: [{ scale: dihalniPulz }],
+                  }
+                ]}
+              />
+              {slikaProfilaUrl ? (
+                <Image source={{ uri: slikaProfilaUrl }} style={styles.profileImage} />
+              ) : (
+                <View style={styles.profileImagePlaceholder}>
+                  <IconSymbol name="person.fill" size={48} color={AuroraColors.primary} />
+                </View>
+              )}
+              <View style={styles.editBadge}>
+                <IconSymbol name="camera.fill" size={16} color={AuroraColors.onPrimary} />
               </View>
+            </TouchableOpacity>
+
+            {aktivniJunak && (
+              <TouchableOpacity
+                onPress={() => usmerjevalnik.push('/heroes')}
+                style={styles.heroContainer}
+                activeOpacity={0.7}>
+                <View style={styles.heroCircle}>
+                  <HeroSprite slug={aktivniJunak.slug} tier={aktivniJunak.tier ?? 1} size={76} />
+                </View>
+                <ThemedText type="caption" variant="muted" numberOfLines={1} style={styles.heroLabel}>
+                  {aktivniJunak.name}
+                </ThemedText>
+              </TouchableOpacity>
             )}
-            <View style={styles.editBadge}>
-              <IconSymbol name="camera.fill" size={16} color={AuroraColors.onPrimary} />
-            </View>
-          </TouchableOpacity>
+          </View>
 
           <View style={styles.inputContainer}>
             <ThemedText type="bodyBold" style={styles.label}>Uporabniško ime</ThemedText>
@@ -365,6 +385,45 @@ export default function ProfileScreen() {
             </View>
           </GlassCard>
 
+          <GlassCard onPress={() => usmerjevalnik.push('/badges')} style={styles.territoryCardWrap}>
+            <View style={styles.territoryCard}>
+              <IconSymbol name="trophy.fill" size={22} color={AuroraColors.primary} />
+              <View style={{ flex: 1 }}>
+                <ThemedText type="h3" variant="primary">Dosežki</ThemedText>
+                <ThemedText type="bodySmall" variant="muted">{statistika?.coins ?? 0} kovancev · odklenite značke</ThemedText>
+              </View>
+              <IconSymbol name="chevron.right" size={18} color={AuroraColors.textFaint} />
+            </View>
+          </GlassCard>
+
+          <GlassCard onPress={() => usmerjevalnik.push('/heroes')} style={styles.territoryCardWrap}>
+            <View style={styles.territoryCard}>
+              <View style={styles.heroCardPreview}>
+                {aktivniJunak ? (
+                  <HeroSprite slug={aktivniJunak.slug} tier={aktivniJunak.tier ?? 1} size={28} animated={false} />
+                ) : (
+                  <IconSymbol name="star.fill" size={22} color={AuroraColors.primary} />
+                )}
+              </View>
+              <View style={{ flex: 1 }}>
+                <ThemedText type="h3" variant="primary">Junaki</ThemedText>
+                <ThemedText type="bodySmall" variant="muted">Odkleni in nadgradi svoje junake</ThemedText>
+              </View>
+              <IconSymbol name="chevron.right" size={18} color={AuroraColors.textFaint} />
+            </View>
+          </GlassCard>
+
+          <GlassCard onPress={() => usmerjevalnik.push('/leaderboard')} style={styles.territoryCardWrap}>
+            <View style={styles.territoryCard}>
+              <IconSymbol name="chart.line.uptrend.xyaxis" size={22} color={AuroraColors.primary} />
+              <View style={{ flex: 1 }}>
+                <ThemedText type="h3" variant="primary">Lestvica</ThemedText>
+                <ThemedText type="bodySmall" variant="muted">Primerjajte se z drugimi tekači</ThemedText>
+              </View>
+              <IconSymbol name="chevron.right" size={18} color={AuroraColors.textFaint} />
+            </View>
+          </GlassCard>
+
           <GlassCard onPress={() => usmerjevalnik.push('/groups')} style={styles.territoryCardWrap}>
             <View style={styles.territoryCard}>
               <IconSymbol name="person.2.fill" size={22} color={AuroraColors.primary} />
@@ -406,11 +465,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.lg,
   },
+  avatarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.lg,
+    marginBottom: Spacing.md,
+  },
   imageContainer: {
     position: 'relative',
-    marginBottom: Spacing.md,
     width: 120,
     height: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroContainer: {
+    alignItems: 'center',
+    gap: 4,
+    width: 96,
+  },
+  heroCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: AuroraColors.surfaceSolid,
+    borderWidth: 2,
+    borderColor: AuroraColors.primary,
+    overflow: 'hidden',
+  },
+  heroLabel: {
+    maxWidth: 96,
+  },
+  heroCardPreview: {
+    width: 22,
+    height: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },

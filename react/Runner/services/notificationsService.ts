@@ -21,23 +21,40 @@ import { Platform } from 'react-native';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase, AttackNotification } from './supabase';
 import { getCurrentUser } from './authService';
+import { formatArea } from './territoryService';
 
 const ATTACK_CHANNEL_ID = 'attacks';
 
 /**
- * Foreground notifications are muted visually (the app shows its own
- * banner instead, via the realtime subscription below) but still play a
- * sound — the OS banner/list only matters when the app isn't frontmost,
- * which this handler doesn't affect.
+ * Attack notifications are muted visually while foregrounded (the app
+ * shows its own banner instead, via the realtime subscription below) but
+ * still play a sound — the OS banner/list only matters when the app isn't
+ * frontmost, which this handler doesn't affect.
+ *
+ * The live-run notification (services/liveRunNotificationService.ts) is
+ * the opposite case: it IS the UI (the lock-screen interface while a run
+ * is being tracked), so it must always actually post, foregrounded or not
+ * — it's tagged with `data.type` so this handler can tell them apart.
  */
 export function configureNotificationHandler(): void {
   Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: false,
-      shouldShowList: false,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
+    handleNotification: async (notification) => {
+      const type = (notification.request.content.data as { type?: string } | undefined)?.type;
+      if (type === 'live-run') {
+        return {
+          shouldShowBanner: false,
+          shouldShowList: true,
+          shouldPlaySound: false,
+          shouldSetBadge: false,
+        };
+      }
+      return {
+        shouldShowBanner: false,
+        shouldShowList: false,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      };
+    },
   });
 }
 
@@ -182,7 +199,9 @@ export async function getPlaceLabel(coord?: { latitude: number; longitude: numbe
 }
 
 /**
- * Slovenian noun case for "zone(s)" — matches supabase/functions/send-attack-push.
+ * Slovenian noun case for "zone(s)" — used by the post-run claim summary
+ * (app/(tabs)/index.tsx), not by formatAttackMessage below (that one speaks
+ * in exact m², matches supabase/functions/send-attack-push).
  * Correct for 1-19 (the realistic range); compound numbers like 21/22 would
  * need the last-digit rule too, not worth it for how this game plays out.
  */
@@ -195,7 +214,7 @@ export function zoneWord(n: number): string {
 
 export function formatAttackMessage(row: AttackNotification): string {
   const name = row.attacker_display_name || row.attacker_username || 'Nekdo';
-  const n = row.zones_lost ?? 1;
+  const area = formatArea(row.area_m2);
   const placeClause = row.place_label ? ` blizu ${row.place_label}` : '';
-  return `${name} vam je pravkar vzel ${n} ${zoneWord(n)}${placeClause}!`;
+  return `${name} vam je pravkar vzel ${area}${placeClause} — in še kar nadaljuje!`;
 }

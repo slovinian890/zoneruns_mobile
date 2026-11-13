@@ -81,6 +81,7 @@ export default function AnalyticsScreen() {
   const [opisDeljenja, setOpisDeljenja] = useState('');
   const [objavljanje, setObjavljanje] = useState(false);
   const zajemRef = useRef<ViewShot>(null);
+  const letniDrsnikRef = useRef<ScrollView>(null);
 
   // Ponovno naloži ob vsakem fokusu, da se "najdaljši tek/čas" takoj
   // posodobita, ko se vrneš sem po novem teku, ki podre dosedanji rekord.
@@ -379,7 +380,11 @@ export default function AnalyticsScreen() {
             {steviloTekovLeto} {steviloTekovBesedilo(steviloTekovLeto)} v zadnjem letu
           </ThemedText>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <ScrollView
+            ref={letniDrsnikRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            onContentSizeChange={() => letniDrsnikRef.current?.scrollToEnd({ animated: false })}>
             <View>
               <View style={[styles.letoGridLine, { gap: LETO_CELICA_ZAZOR }]}>
                 <View style={{ width: LETO_OZNAKA_SIRINA }} />

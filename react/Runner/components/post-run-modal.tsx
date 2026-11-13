@@ -14,10 +14,21 @@ import { ClaimTerritoryResult, Run } from '@/services/supabase';
 import { intervalToSeconds } from '@/services/runsService';
 import { formatArea } from '@/services/territoryService';
 
+// Slovenian noun declension for "kovanec" (coin) isn't a simple suffix swap
+// (kovanec → kovanca, not "kovanekca"), so this spells out the four forms
+// instead of guessing one from a stem.
+function besedaZaKovance(n: number): string {
+  if (n === 1) return 'kovanec';
+  if (n === 2) return 'kovanca';
+  if (n === 3 || n === 4) return 'kovanci';
+  return 'kovancev';
+}
+
 interface PostRunModalProps {
   visible: boolean;
   run: Run | null;
   territoryResult: ClaimTerritoryResult | null;
+  coinsEarned?: number;
   onClose: () => void;
   onPost: () => void;
 }
@@ -26,6 +37,7 @@ export default function PostRunModal({
   visible,
   run,
   territoryResult,
+  coinsEarned,
   onClose,
   onPost,
 }: PostRunModalProps) {
@@ -112,7 +124,7 @@ export default function PostRunModal({
             </TouchableOpacity>
           </View>
 
-          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.scrollArea} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
             {/* Kartica povzetka — zajeta za deljenje (Instagram Stories ipd.) */}
             <View style={styles.shareCardHeaderRow}>
               <ThemedText type="bodyBold">Povzetek teka</ThemedText>
@@ -153,6 +165,15 @@ export default function PostRunModal({
                     { value: run.pace ?? '0:00', label: 'tempo/km' },
                   ]}
                 />
+
+                {!!coinsEarned && (
+                  <View style={styles.coinsRow}>
+                    <IconSymbol name="coins.fill" size={16} color={AuroraColors.accentAmber} />
+                    <ThemedText type="bodyBold" lightColor={AuroraColors.accentAmber} darkColor={AuroraColors.accentAmber}>
+                      +{coinsEarned} {besedaZaKovance(coinsEarned)}
+                    </ThemedText>
+                  </View>
+                )}
 
                 {ozemljeZaseženo ? (
                   <View style={styles.zoneStatsWrap}>
@@ -250,6 +271,9 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#FFFFFF',
   },
+  scrollArea: {
+    flex: 1,
+  },
   content: {
     padding: 20,
   },
@@ -301,6 +325,13 @@ const styles = StyleSheet.create({
   heroLabel: {
     letterSpacing: 2,
     marginTop: -4,
+  },
+  coinsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: Spacing.md,
   },
   zoneStatsWrap: {
     marginTop: Spacing.md,

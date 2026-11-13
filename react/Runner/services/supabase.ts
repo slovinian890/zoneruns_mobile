@@ -47,6 +47,7 @@ export interface Profile {
   bio: string | null;
   location: string | null;
   trail_color: string | null;
+  active_hero_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -111,6 +112,7 @@ export interface UserStats {
   weekly_goal_km: number;
   current_streak: number;
   longest_streak: number;
+  coins: number;
   created_at: string;
   updated_at: string;
 }
@@ -251,6 +253,86 @@ export interface ClaimTerritoryResult {
   claimed_area_m2?: number;
   total_area_m2?: number;
   stolen?: Array<{ user_id: string; area_m2: number; zones_lost: number }>;
+}
+
+// ============================================
+// HEROES
+// ============================================
+
+export type HeroRarity = 'common' | 'rare' | 'epic' | 'legendary';
+
+/** One row from get_my_heroes() — catalog entry joined with this user's ownership. */
+export interface MyHero {
+  hero_id: string;
+  slug: string;
+  name: string;
+  rarity: HeroRarity;
+  unlock_cost: number;
+  owned: boolean;
+  tier: number | null;
+  is_active: boolean;
+}
+
+export interface HeroActionResult {
+  success: boolean;
+  reason?: 'already_owned' | 'hero_not_found' | 'not_enough_coins' | 'not_owned' | 'max_tier';
+  cost?: number;
+  coins?: number;
+  new_tier?: number;
+}
+
+// ============================================
+// COINS
+// ============================================
+
+/** One row from coin_transactions — a single run's coin payout. */
+export interface CoinTransaction {
+  id: string;
+  user_id: string;
+  run_id: string | null;
+  amount: number;
+  distance_km: number;
+  created_at: string;
+}
+
+// ============================================
+// LEADERBOARD TYPES
+// ============================================
+
+/** One row from get_territory_leaderboard — solo, all-time, by held area. */
+export interface TerritoryLeaderboardEntry {
+  user_id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  trail_color: string;
+  area_m2: number;
+  rank: number;
+}
+
+/** One row from get_weekly_leaderboard — solo, this week's net area change. */
+export interface WeeklyLeaderboardEntry {
+  user_id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  trail_color: string;
+  gained_m2: number;
+  lost_m2: number;
+  net_m2: number;
+  rank: number;
+}
+
+/** One row from get_weekly_group_leaderboard — clans, this week's net area change. */
+export interface WeeklyGroupLeaderboardEntry {
+  group_id: string;
+  name: string;
+  color: string;
+  member_count: number;
+  gained_m2: number;
+  lost_m2: number;
+  net_m2: number;
+  rank: number;
 }
 
 // ============================================

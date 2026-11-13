@@ -55,4 +55,5 @@ skills-lock.json
 # Debug screenshots/dumps left over from on-device testing
 *.png
 !react/Runner/assets/images/*.png
+!react/Runner/assets/images/heroes/**/*.png
 ui_dump*.txt

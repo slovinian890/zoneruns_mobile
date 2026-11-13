@@ -23,28 +23,23 @@ interface AttackRow {
   attacker_username: string;
   attacker_display_name: string | null;
   area_m2: number;
-  zones_lost: number;
   place_label: string | null;
 }
 
-// Slovenian noun case for "zone(s)" — 1/2/3-4/5+ take different forms.
-// Correct for the common single-digit range this game actually produces;
-// compound numbers like 21/22 would need the last-digit rule too, but
-// stealing 20+ zones in one run is an edge case not worth the complexity.
-function zoneWord(n: number): string {
-  if (n === 1) return "območje";
-  if (n === 2) return "območji";
-  if (n === 3 || n === 4) return "območja";
-  return "območij";
+// Matches services/territoryService.ts's formatArea on the client, so the
+// push body reads identically to the in-app realtime banner.
+function formatArea(areaM2: number): string {
+  if (areaM2 >= 10000) return `${(areaM2 / 1_000_000).toFixed(2)} km²`;
+  return `${Math.round(areaM2).toLocaleString()} m²`;
 }
 
 function attackMessage(row: AttackRow): { title: string; body: string } {
   const name = row.attacker_display_name || row.attacker_username || "Nekdo";
-  const n = row.zones_lost ?? 1;
+  const area = formatArea(row.area_m2);
   const placeClause = row.place_label ? ` blizu ${row.place_label}` : "";
   return {
     title: "⚔️ Pod napadom!",
-    body: `${name} vam je pravkar vzel ${n} ${zoneWord(n)}${placeClause}!`,
+    body: `${name} vam je pravkar vzel ${area}${placeClause} — in še kar nadaljuje!`,
   };
 }
 
@@ -93,7 +88,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: rows, error: rowsError } = await admin
       .from("attack_notifications")
-      .select("id, victim_id, attacker_id, attacker_username, attacker_display_name, area_m2, zones_lost, place_label")
+      .select("id, victim_id, attacker_id, attacker_username, attacker_display_name, area_m2, place_label")
       .eq("run_id", run_id)
       .is("pushed_at", null);
 

@@ -51,6 +51,7 @@ const ICON_MAPPING: Record<string, IconConfig> = {
   
   // Media & Actions
   'play.fill': { library: 'fa', name: 'play' },
+  'pause.fill': { library: 'fa', name: 'pause' },
   'stop.fill': { library: 'fa', name: 'stop' },
   'play.circle.fill': { library: 'fa', name: 'play-circle' },
   'camera.fill': { library: 'fa', name: 'camera' },
@@ -73,6 +74,8 @@ const ICON_MAPPING: Record<string, IconConfig> = {
   'bolt.fill': { library: 'fa', name: 'bolt' },
   'mountain.2.fill': { library: 'fa5', name: 'mountain' },
   'clock.fill': { library: 'fa', name: 'clock-o' },
+  'coins.fill': { library: 'fa5', name: 'coins' },
+  'crown.fill': { library: 'fa5', name: 'crown' },
   
   // Map & Location
   'location.fill': { library: 'fa', name: 'map-marker' },

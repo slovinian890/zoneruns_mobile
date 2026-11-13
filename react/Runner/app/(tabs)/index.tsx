@@ -38,11 +38,20 @@ import {
   formatArea,
 } from '@/services/territoryService';
 import { getPlaceLabel, notifyAttackVictims, zoneWord } from '@/services/notificationsService';
+import { coinsForDistance } from '@/services/coinsService';
 import {
   startBackgroundLocationTracking,
   stopBackgroundLocationTracking,
   setBackgroundLocationListener,
 } from '@/services/locationTask';
+import {
+  showLiveRunNotification,
+  dismissLiveRunNotification,
+  addStopRunActionListener,
+  addPauseRunActionListener,
+  addResumeRunActionListener,
+  setLiveRunPlaybackState,
+} from '@/services/liveRunNotificationService';
 import { useFocusEffect } from 'expo-router';
 
 // GPS fixes worse than this (meters) are dropped instead of being drawn into
@@ -91,17 +100,39 @@ export default function HomeScreen() {
   const [zacetniCas, setZacetniCas] = useState<number | null>(null);
   const [pot, setPot] = useState<Array<{ latitude: number; longitude: number }>>([]);
   const [shranjevanje, setShranjevanje] = useState(false);
+  const [pavzirano, setPavzirano] = useState(false);
 
   // ── Reference ──
   const narocninaLokacije = useRef<Location.LocationSubscription | null>(null);
   const casovnikRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const zadnjaLokacijaRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const mirovanjeNarocnina = useRef<Location.LocationSubscription | null>(null);
+  // Mirrors `razdalja` for the live-run notification's 1s interval tick,
+  // which otherwise would only ever see the state as of effect setup.
+  const razdaljaRef = useRef(0);
+  // Same idea for `trajanje`, so pavza/nadaljevanje can report the latest
+  // elapsed time to the lock-screen notification without depending on it.
+  const trajanjeRef = useRef(0);
+  // Mutable start time used for the elapsed-time math. Shifted forward on
+  // resume by however long the pause lasted, so trajanje stays continuous
+  // without touching the `zacetniCas` state (which would retrigger the
+  // whole background-tracking effect below).
+  const zacetniCasRef = useRef<number | null>(null);
+  const pavziranoRef = useRef(false);
+  const pavzaZacetekRef = useRef<number | null>(null);
+  // Always-current ustaviTek/prekiniTek/nadaljujTek, so the notification's
+  // actions (wired up once per run start) call the latest version without
+  // retriggering the whole background-tracking effect every time
+  // razdalja/trajanje change.
+  const ustaviTekRef = useRef<() => void>(() => {});
+  const prekiniTekRef = useRef<() => void>(() => {});
+  const nadaljujTekRef = useRef<() => void>(() => {});
 
   // ── Modal po teku ──
   const [prikaziModalObjave, setPrikaziModalObjave] = useState(false);
   const [shranjenTek, setShranjenTek] = useState<Run | null>(null);
   const [zadnjiRezultatOzemlja, setZadnjiRezultatOzemlja] = useState<ClaimTerritoryResult | null>(null);
+  const [zasluzeniKovanci, setZasluzeniKovanci] = useState(0);
 
   // ── Barva sledi ──
   const [barvaSled, setBarvaSled] = useState<string>(DEFAULT_TRAIL_COLOR);
@@ -129,7 +160,7 @@ export default function HomeScreen() {
   const dihalniPulz = useSharedValue(1);
 
   useEffect(() => {
-    if (nacin === 'running') {
+    if (nacin === 'running' && !pavzirano) {
       dihalniPulz.value = withRepeat(
         withTiming(1.05, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
         -1,
@@ -138,7 +169,7 @@ export default function HomeScreen() {
     } else {
       dihalniPulz.value = withTiming(1, { duration: 200 });
     }
-  }, [nacin, dihalniPulz]);
+  }, [nacin, pavzirano, dihalniPulz]);
 
   const statsBarAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: dihalniPulz.value }],
@@ -205,16 +236,35 @@ export default function HomeScreen() {
     if (!(nacin === 'running' && zacetniCas)) return;
 
     let aktiven = true;
+    zacetniCasRef.current = zacetniCas;
+    pavziranoRef.current = false;
+    pavzaZacetekRef.current = null;
+    setPavzirano(false);
 
     casovnikRef.current = setInterval(() => {
-      setTrajanje(Math.floor((Date.now() - zacetniCas) / 1000));
+      if (pavziranoRef.current) return;
+      const trajanjeSek = Math.floor((Date.now() - (zacetniCasRef.current ?? zacetniCas)) / 1000);
+      setTrajanje(trajanjeSek);
+      trajanjeRef.current = trajanjeSek;
+      showLiveRunNotification({
+        distanceLabel: razdaljaRef.current.toFixed(2),
+        durationLabel: oblikujTrajanje(trajanjeSek),
+        paceLabel: oblikujTempo(razdaljaRef.current, trajanjeSek),
+      });
     }, 1000);
+
+    // Takoj prikaži obvestilo (ne čakaj na prvi tik časovnika), da se
+    // vmesnik na zaklenjenem zaslonu pojavi, brž ko se tek začne.
+    showLiveRunNotification({ distanceLabel: '0.00', durationLabel: '0:00', paceLabel: '0:00' });
+    const stopActionNarocnina = addStopRunActionListener(() => ustaviTekRef.current());
+    const pauseActionNarocnina = addPauseRunActionListener(() => prekiniTekRef.current());
+    const resumeActionNarocnina = addResumeRunActionListener(() => nadaljujTekRef.current());
 
     mirovanjeNarocnina.current?.remove();
     mirovanjeNarocnina.current = null;
 
     const obdelajNovoLokacijo = (novaLok: Location.LocationObject) => {
-      if (!aktiven) return;
+      if (!aktiven || pavziranoRef.current) return;
       const { latitude, longitude, accuracy } = novaLok.coords;
       if (accuracy != null && accuracy > NAJSLABSA_SPREJEMLJIVA_NATANCNOST_M) return;
 
@@ -227,7 +277,10 @@ export default function HomeScreen() {
           latitude,
           longitude,
         );
-        if (odsek < 0.1) setRazdalja((prej) => prej + odsek);
+        if (odsek < 0.1) {
+          setRazdalja((prej) => prej + odsek);
+          razdaljaRef.current += odsek;
+        }
       }
 
       zadnjaLokacijaRef.current = { latitude, longitude };
@@ -257,6 +310,10 @@ export default function HomeScreen() {
       narocninaLokacije.current?.remove();
       narocninaLokacije.current = null;
       deactivateKeepAwake('zoneruns-tek');
+      stopActionNarocnina.remove();
+      pauseActionNarocnina.remove();
+      resumeActionNarocnina.remove();
+      dismissLiveRunNotification();
 
       if (!mirovanjeNarocnina.current) {
         Location.watchPositionAsync(
@@ -271,7 +328,9 @@ export default function HomeScreen() {
   const zacniTek = useCallback(() => {
     setZacetniCas(Date.now());
     setRazdalja(0);
+    razdaljaRef.current = 0;
     setTrajanje(0);
+    trajanjeRef.current = 0;
     setPot([]);
     if (lokacija) {
       const { latitude, longitude } = lokacija.coords;
@@ -309,6 +368,9 @@ export default function HomeScreen() {
       Alert.alert('Tek prekratek', 'Tecite vsaj nekaj sekund za shranitev.');
       setRazdalja(0); setTrajanje(0); setPot([]); setZacetniCas(null);
       zadnjaLokacijaRef.current = null;
+      pavziranoRef.current = false;
+      pavzaZacetekRef.current = null;
+      setPavzirano(false);
       return;
     }
 
@@ -374,6 +436,7 @@ export default function HomeScreen() {
           }
 
           setZadnjiRezultatOzemlja(rezultatOzemlja);
+          setZasluzeniKovanci(coinsForDistance(rezultat.run.distance_km));
           setShranjenTek(rezultat.run);
           setPrikaziModalObjave(true);
         }
@@ -384,6 +447,9 @@ export default function HomeScreen() {
 
         setRazdalja(0); setTrajanje(0); setPot([]); setZacetniCas(null);
         zadnjaLokacijaRef.current = null;
+        pavziranoRef.current = false;
+        pavzaZacetekRef.current = null;
+        setPavzirano(false);
       } else {
         Alert.alert('Napaka', rezultat.error || 'Shranjevanje teka ni uspelo');
       }
@@ -394,6 +460,52 @@ export default function HomeScreen() {
       setShranjevanje(false);
     }
   }, [trajanje, razdalja, pot, barvaSled, prikaziRezultatOzemlja]);
+
+  // ── Premor & nadaljevanje teka ──
+  // Pavza samo ustavi časovnik/GPS obdelavo (prek pavziranoRef) — ozadnje
+  // sledenje lokaciji teče naprej, da se ne podvaja zagon/ustavitev
+  // ozadnega taska. Ob nadaljevanju premaknemo zacetniCasRef naprej za
+  // trajanje premora, da trajanje ne "poskoči", in ponastavimo zadnjo
+  // lokacijo, da prvi GPS popravek po premoru ne šteje kot prehojena pot.
+  const prekiniTek = useCallback(() => {
+    if (pavziranoRef.current) return;
+    pavziranoRef.current = true;
+    pavzaZacetekRef.current = Date.now();
+    setPavzirano(true);
+    setLiveRunPlaybackState(true);
+    showLiveRunNotification(
+      {
+        distanceLabel: razdaljaRef.current.toFixed(2),
+        durationLabel: oblikujTrajanje(trajanjeRef.current),
+        paceLabel: oblikujTempo(razdaljaRef.current, trajanjeRef.current),
+      },
+      { paused: true },
+    );
+  }, []);
+
+  const nadaljujTek = useCallback(() => {
+    if (!pavziranoRef.current) return;
+    if (pavzaZacetekRef.current != null) {
+      const odmikPavze = Date.now() - pavzaZacetekRef.current;
+      if (zacetniCasRef.current != null) zacetniCasRef.current += odmikPavze;
+      pavzaZacetekRef.current = null;
+    }
+    zadnjaLokacijaRef.current = null;
+    pavziranoRef.current = false;
+    setPavzirano(false);
+    setLiveRunPlaybackState(false);
+    showLiveRunNotification({
+      distanceLabel: razdaljaRef.current.toFixed(2),
+      durationLabel: oblikujTrajanje(trajanjeRef.current),
+      paceLabel: oblikujTempo(razdaljaRef.current, trajanjeRef.current),
+    });
+  }, []);
+
+  useEffect(() => {
+    ustaviTekRef.current = ustaviTek;
+    prekiniTekRef.current = prekiniTek;
+    nadaljujTekRef.current = nadaljujTek;
+  }, [ustaviTek, prekiniTek, nadaljujTek]);
 
   // ── Naloži ozemlja za trenutni pogled zemljevida ──
   // Zapomni si zadnji okvir, da lahko preklopiOzemljaPogled znova naloži
@@ -657,13 +769,24 @@ export default function HomeScreen() {
             />
           </View>
         ) : (
-          <GradientButton
-            label={shranjevanje ? 'Shranjevanje...' : 'Ustavi & shrani'}
-            icon="stop.fill"
-            onPress={ustaviTek}
-            variant="danger"
-            disabled={shranjevanje}
-          />
+          <View style={styles.buttonRow}>
+            <GradientButton
+              label={pavzirano ? 'Nadaljuj' : 'Premor'}
+              icon={pavzirano ? 'play.fill' : 'pause.fill'}
+              onPress={pavzirano ? nadaljujTek : prekiniTek}
+              variant="primary"
+              disabled={shranjevanje}
+              style={{ flex: 1 }}
+            />
+            <GradientButton
+              label={shranjevanje ? 'Shranjevanje...' : 'Ustavi & shrani'}
+              icon="stop.fill"
+              onPress={ustaviTek}
+              variant="danger"
+              disabled={shranjevanje}
+              style={{ flex: 1 }}
+            />
+          </View>
         )}
       </View>
 
@@ -671,10 +794,12 @@ export default function HomeScreen() {
         visible={prikaziModalObjave}
         run={shranjenTek}
         territoryResult={zadnjiRezultatOzemlja}
+        coinsEarned={zasluzeniKovanci}
         onClose={() => {
           setPrikaziModalObjave(false);
           setShranjenTek(null);
           setZadnjiRezultatOzemlja(null);
+          setZasluzeniKovanci(0);
         }}
         onPost={() => {}}
       />

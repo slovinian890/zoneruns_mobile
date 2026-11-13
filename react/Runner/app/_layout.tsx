@@ -74,6 +74,9 @@ export default function RootLayout() {
                 <Stack.Screen name="group-detail" options={{ headerShown: false }} />
                 <Stack.Screen name="group-chat" options={{ headerShown: false }} />
                 <Stack.Screen name="analytics" options={{ headerShown: false }} />
+                <Stack.Screen name="badges" options={{ headerShown: false }} />
+                <Stack.Screen name="leaderboard" options={{ headerShown: false }} />
+                <Stack.Screen name="heroes" options={{ headerShown: false }} />
               </Stack>
               <StatusBar style="light" />
             </AttackAlertProvider>
