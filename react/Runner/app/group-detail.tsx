@@ -15,11 +15,13 @@ import {
   deleteGroup,
   updateGroup,
   regenerateInviteCode,
+  getMyActiveGroup,
+  setActiveGroup,
   GROUP_MEMBER_LIMIT,
 } from '@/services/groupsService';
 import { getCurrentUser } from '@/services/authService';
 import { formatArea } from '@/services/territoryService';
-import { Group, GroupMemberStat } from '@/services/supabase';
+import { Group, GroupMemberStat, MyActiveGroup } from '@/services/supabase';
 
 export default function GroupDetailScreen() {
   const barvnaShema = useColorScheme();
@@ -32,6 +34,9 @@ export default function GroupDetailScreen() {
   const [trenutniUporabnikId, setTrenutniUporabnikId] = useState<string | null>(null);
   const [nalaganje, setNalaganje] = useState(true);
   const [dejanjeVTeku, setDejanjeVTeku] = useState(false);
+  // Which clan (if any) the viewer currently represents when claiming hexes —
+  // see set_active_group / migrations/017_clan_hex_warfare.sql.
+  const [mojAktivniKlan, setMojAktivniKlan] = useState<MyActiveGroup | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -42,38 +47,54 @@ export default function GroupDetailScreen() {
   const naloziPodatke = async () => {
     if (!groupId) return;
     try {
-      const [uporabnik, rezultatSkupine, statistikaClanov] = await Promise.all([
+      const [uporabnik, rezultatSkupine, statistikaClanov, aktivniKlan] = await Promise.all([
         getCurrentUser(),
         getGroup(groupId),
         getGroupStats(groupId),
+        getMyActiveGroup(),
       ]);
       setTrenutniUporabnikId(uporabnik?.id ?? null);
       if (rezultatSkupine.success && rezultatSkupine.group) setSkupina(rezultatSkupine.group);
       setClani(statistikaClanov);
+      setMojAktivniKlan(aktivniKlan);
     } catch (napaka) {
-      console.error('Napaka pri nalaganju skupine:', napaka);
+      console.error('Error loading group:', napaka);
     } finally {
       setNalaganje(false);
     }
   };
 
   const jeLastnik = !!skupina && !!trenutniUporabnikId && skupina.created_by === trenutniUporabnikId;
+  const jeClan = !!trenutniUporabnikId && clani.some((c) => c.user_id === trenutniUporabnikId);
+  const jeAktivenZaTaKlub = !!skupina && mojAktivniKlan?.group_id === skupina.id;
   const skupnaPovrsina = clani.reduce((v, c) => v + c.area_m2, 0);
+
+  const obdelajPreklopAktivnegaKluba = async () => {
+    if (!skupina) return;
+    setDejanjeVTeku(true);
+    const rezultat = await setActiveGroup(jeAktivenZaTaKlub ? null : skupina.id);
+    setDejanjeVTeku(false);
+    if (rezultat.success) {
+      setMojAktivniKlan(jeAktivenZaTaKlub ? null : { group_id: skupina.id, name: skupina.name, color: skupina.color });
+    } else {
+      Alert.alert('Error', 'Could not update your active clan');
+    }
+  };
 
   const obdelajDeljenje = async () => {
     if (!skupina) return;
     try {
       await Share.share({
-        message: `Pridruži se moji skupini "${skupina.name}" v ZoneRuns! Koda: ${skupina.invite_code}`,
+        message: `Join my group "${skupina.name}" on ZoneRuns! Code: ${skupina.invite_code}`,
       });
     } catch {}
   };
 
   const obdelajZapustitev = () => {
-    Alert.alert('Zapusti skupino', `Ali ste prepričani, da želite zapustiti "${skupina?.name}"?`, [
-      { text: 'Prekliči', style: 'cancel' },
+    Alert.alert('Leave Group', `Are you sure you want to leave "${skupina?.name}"?`, [
+      { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Zapusti',
+        text: 'Leave',
         style: 'destructive',
         onPress: async () => {
           setDejanjeVTeku(true);
@@ -82,7 +103,7 @@ export default function GroupDetailScreen() {
           if (rezultat.success) {
             usmerjevalnik.back();
           } else {
-            Alert.alert('Napaka', rezultat.error || 'Zapustitev ni uspela');
+            Alert.alert('Error', rezultat.error || 'Could not leave the group');
           }
         },
       },
@@ -90,17 +111,17 @@ export default function GroupDetailScreen() {
   };
 
   const obdelajOdstranitev = (clan: GroupMemberStat) => {
-    Alert.alert('Odstrani člana', `Odstranite ${clan.display_name || clan.username} iz skupine?`, [
-      { text: 'Prekliči', style: 'cancel' },
+    Alert.alert('Remove Member', `Remove ${clan.display_name || clan.username} from the group?`, [
+      { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Odstrani',
+        text: 'Remove',
         style: 'destructive',
         onPress: async () => {
           const rezultat = await removeMember(groupId, clan.user_id);
           if (rezultat.success) {
             naloziPodatke();
           } else {
-            Alert.alert('Napaka', rezultat.error || 'Odstranitev ni uspela');
+            Alert.alert('Error', rezultat.error || 'Could not remove the member');
           }
         },
       },
@@ -108,10 +129,10 @@ export default function GroupDetailScreen() {
   };
 
   const obdelajBrisanje = () => {
-    Alert.alert('Izbriši skupino', `Skupina "${skupina?.name}" bo trajno izbrisana za vse člane. Tega dejanja ni mogoče razveljaviti.`, [
-      { text: 'Prekliči', style: 'cancel' },
+    Alert.alert('Delete Group', `The group "${skupina?.name}" will be permanently deleted for all members. This action cannot be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Izbriši',
+        text: 'Delete',
         style: 'destructive',
         onPress: async () => {
           setDejanjeVTeku(true);
@@ -120,7 +141,7 @@ export default function GroupDetailScreen() {
           if (rezultat.success) {
             usmerjevalnik.back();
           } else {
-            Alert.alert('Napaka', rezultat.error || 'Brisanje ni uspelo');
+            Alert.alert('Error', rezultat.error || 'Could not delete the group');
           }
         },
       },
@@ -133,21 +154,21 @@ export default function GroupDetailScreen() {
     if (rezultat.success) {
       setSkupina({ ...skupina, is_public: !skupina.is_public });
     } else {
-      Alert.alert('Napaka', rezultat.error || 'Posodobitev ni uspela');
+      Alert.alert('Error', rezultat.error || 'Could not update the group');
     }
   };
 
   const obdelajNovoKodo = () => {
-    Alert.alert('Nova koda za pridružitev', 'Stara koda ne bo več delovala. Nadaljujete?', [
-      { text: 'Prekliči', style: 'cancel' },
+    Alert.alert('New Invite Code', 'The old code will stop working. Continue?', [
+      { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Ustvari novo',
+        text: 'Create New',
         onPress: async () => {
           const rezultat = await regenerateInviteCode(groupId);
           if (rezultat.success && rezultat.code && skupina) {
             setSkupina({ ...skupina, invite_code: rezultat.code });
           } else {
-            Alert.alert('Napaka', rezultat.error || 'Ustvarjanje nove kode ni uspelo');
+            Alert.alert('Error', rezultat.error || 'Could not create a new code');
           }
         },
       },
@@ -158,7 +179,7 @@ export default function GroupDetailScreen() {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ThemedText type="body" variant="secondary">Nalaganje...</ThemedText>
+          <ThemedText type="body" variant="secondary">Loading...</ThemedText>
         </View>
       </ThemedView>
     );
@@ -168,9 +189,9 @@ export default function GroupDetailScreen() {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ThemedText type="body" variant="secondary">Skupina ni najdena</ThemedText>
+          <ThemedText type="body" variant="secondary">Group not found</ThemedText>
           <TouchableOpacity style={[styles.backButton, { backgroundColor: barve.primary }]} onPress={() => usmerjevalnik.back()} activeOpacity={0.7}>
-            <ThemedText type="bodyBold" lightColor={AuroraColors.onPrimary} darkColor={AuroraColors.onPrimary}>Nazaj</ThemedText>
+            <ThemedText type="bodyBold" lightColor={AuroraColors.onPrimary} darkColor={AuroraColors.onPrimary}>Back</ThemedText>
           </TouchableOpacity>
         </View>
       </ThemedView>
@@ -197,7 +218,7 @@ export default function GroupDetailScreen() {
           <View style={styles.badgeRow}>
             <IconSymbol name={skupina.is_public ? 'magnifyingglass' : 'lock.fill'} size={14} color={barve.textMuted} />
             <ThemedText type="caption" variant="muted" style={{ marginLeft: 4 }}>
-              {skupina.is_public ? 'Javna skupina' : 'Zasebna skupina'} · {clani.length}/{GROUP_MEMBER_LIMIT} članov
+              {skupina.is_public ? 'Public group' : 'Private group'} · {clani.length}/{GROUP_MEMBER_LIMIT} members
             </ThemedText>
           </View>
           {!!skupina.description && (
@@ -208,23 +229,44 @@ export default function GroupDetailScreen() {
             <IconSymbol name="hexagon.fill" size={22} color={barve.primary} />
             <View style={{ flex: 1 }}>
               <ThemedText type="h3" variant="primary">{formatArea(skupnaPovrsina)}</ThemedText>
-              <ThemedText type="bodySmall" variant="muted">Skupno ozemlje skupine</ThemedText>
+              <ThemedText type="bodySmall" variant="muted">Group&apos;s total territory</ThemedText>
             </View>
           </View>
+
+          {jeClan && (
+            <TouchableOpacity
+              style={[
+                styles.activeClanRow,
+                { backgroundColor: barvnaShema === 'dark' ? barve.card : barve.backgroundSecondary, borderWidth: 1, borderColor: jeAktivenZaTaKlub ? skupina.color : barve.border },
+              ]}
+              onPress={obdelajPreklopAktivnegaKluba}
+              disabled={dejanjeVTeku}
+              activeOpacity={0.7}>
+              <IconSymbol name={jeAktivenZaTaKlub ? 'checkmark.circle.fill' : 'hexagon.fill'} size={20} color={jeAktivenZaTaKlub ? skupina.color : barve.primary} />
+              <View style={{ flex: 1 }}>
+                <ThemedText type="bodyBold">{jeAktivenZaTaKlub ? 'Running for this clan' : 'Run for this clan'}</ThemedText>
+                <ThemedText type="caption" variant="muted">
+                  {jeAktivenZaTaKlub
+                    ? 'Hexes you claim belong to this clan — tap to go solo again'
+                    : 'Hexes you claim will belong to the clan, not just you, until you switch back'}
+                </ThemedText>
+              </View>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={[styles.codeRow, { backgroundColor: barvnaShema === 'dark' ? barve.card : barve.backgroundSecondary, borderWidth: 1, borderColor: barve.border }]}
             onPress={obdelajDeljenje}
             activeOpacity={0.7}>
             <View>
-              <ThemedText type="caption" variant="muted">Koda za pridružitev</ThemedText>
+              <ThemedText type="caption" variant="muted">Invite code</ThemedText>
               <ThemedText type="h3" style={{ letterSpacing: 2 }}>{skupina.invite_code}</ThemedText>
             </View>
             <IconSymbol name="square.and.arrow.up" size={20} color={barve.primary} />
           </TouchableOpacity>
         </View>
 
-        <ThemedText type="h3" style={styles.sectionTitle}>Člani</ThemedText>
+        <ThemedText type="h3" style={styles.sectionTitle}>Members</ThemedText>
         {clani.map((clan) => {
           const jeTaLastnik = clan.user_id === skupina.created_by;
           return (
@@ -259,21 +301,21 @@ export default function GroupDetailScreen() {
               onPress={obdelajPreklopVidnosti}
               activeOpacity={0.7}>
               <ThemedText type="bodyBold" variant="primary">
-                {skupina.is_public ? 'Naredi zasebno' : 'Naredi javno'}
+                {skupina.is_public ? 'Make private' : 'Make public'}
               </ThemedText>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.secondaryButton, { borderWidth: 1, borderColor: barve.border }]}
               onPress={obdelajNovoKodo}
               activeOpacity={0.7}>
-              <ThemedText type="bodyBold" variant="primary">Nova koda</ThemedText>
+              <ThemedText type="bodyBold" variant="primary">New Code</ThemedText>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.dangerButton, { borderColor: '#E53935' }]}
               onPress={obdelajBrisanje}
               disabled={dejanjeVTeku}
               activeOpacity={0.7}>
-              <ThemedText type="bodyBold" lightColor="#E53935" darkColor="#E53935">Izbriši skupino</ThemedText>
+              <ThemedText type="bodyBold" lightColor="#E53935" darkColor="#E53935">Delete Group</ThemedText>
             </TouchableOpacity>
           </View>
         ) : (
@@ -282,7 +324,7 @@ export default function GroupDetailScreen() {
             onPress={obdelajZapustitev}
             disabled={dejanjeVTeku}
             activeOpacity={0.7}>
-            <ThemedText type="bodyBold" lightColor="#E53935" darkColor="#E53935">Zapusti skupino</ThemedText>
+            <ThemedText type="bodyBold" lightColor="#E53935" darkColor="#E53935">Leave Group</ThemedText>
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -308,6 +350,7 @@ const styles = StyleSheet.create({
   badgeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.sm },
   description: { textAlign: 'center', marginBottom: Spacing.md },
   totalCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, padding: Spacing.md, borderRadius: BorderRadius.card, width: '100%', marginBottom: Spacing.sm },
+  activeClanRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, padding: Spacing.md, borderRadius: BorderRadius.card, width: '100%', marginBottom: Spacing.sm },
   codeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.md, borderRadius: BorderRadius.card, width: '100%' },
   sectionTitle: { marginBottom: Spacing.sm },
   groupNameRow: { flexDirection: 'row', alignItems: 'center' },

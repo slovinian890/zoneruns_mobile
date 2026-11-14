@@ -35,7 +35,7 @@ export default function RunsScreen() {
       const rezultat = await getUserRuns();
       setTeki(rezultat.data);
     } catch (napaka) {
-      console.error('Napaka pri nalaganju tekov:', napaka);
+      console.error('Error loading runs:', napaka);
     } finally {
       setNalaganje(false);
       setOsvezevanje(false);
@@ -54,9 +54,9 @@ export default function RunsScreen() {
     }
   };
 
-  const mesecOznaka = new Date().toLocaleDateString('sl-SI', { month: 'long' }).toUpperCase();
+  const mesecOznaka = new Date().toLocaleDateString('en-US', { month: 'long' }).toUpperCase();
   const skupnaRazdalja = teki.reduce((vsota, t) => vsota + Number(t.distance_km || 0), 0).toFixed(1);
-  const stevilkaTekov = `${teki.length} ${teki.length === 1 ? 'tek' : teki.length === 2 ? 'teka' : teki.length === 3 || teki.length === 4 ? 'teki' : 'tekov'}`;
+  const stevilkaTekov = `${teki.length} ${teki.length === 1 ? 'run' : 'runs'}`;
 
   const oblikujTrajanje = (interval: string | null): string => {
     if (!interval) return '0:00';
@@ -72,12 +72,12 @@ export default function RunsScreen() {
 
   const izrisiTek = ({ item }: { item: Run }) => {
     const datumVrstica = new Date(item.run_date)
-      .toLocaleDateString('sl-SI', { weekday: 'short', day: 'numeric', month: 'short' })
+      .toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })
       .toUpperCase()
       .replace(/\.$/, '');
     const uraVrstica =
       item.run_time ??
-      new Date(item.created_at).toLocaleTimeString('sl-SI', { hour: '2-digit', minute: '2-digit' });
+      new Date(item.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
     return (
       <GlassCard style={styles.runCard}>
@@ -86,21 +86,21 @@ export default function RunsScreen() {
             <ThemedText type="caption" variant="muted" style={styles.dateLine}>
               {datumVrstica} · {uraVrstica}
             </ThemedText>
-            <ThemedText type="h3">{item.title || 'Tek'}</ThemedText>
+            <ThemedText type="h3">{item.title || 'Run'}</ThemedText>
           </View>
           {item.calories ? (
             <View style={styles.badge}>
               <IconSymbol name="flame.fill" size={12} color={AuroraColors.onPrimary} />
               <ThemedText type="caption" lightColor={AuroraColors.onPrimary} darkColor={AuroraColors.onPrimary} style={styles.badgeText}>
-                {item.calories} kal
+                {item.calories} cal
               </ThemedText>
             </View>
           ) : null}
           <TouchableOpacity
             onPress={() =>
-              Alert.alert('Izbriši tek', 'Ste prepričani?', [
-                { text: 'Prekliči', style: 'cancel' },
-                { text: 'Izbriši', style: 'destructive', onPress: () => izbrisiTek(item.id) },
+              Alert.alert('Delete run', 'Are you sure?', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => izbrisiTek(item.id) },
               ])
             }
             hitSlop={8}
@@ -124,8 +124,8 @@ export default function RunsScreen() {
         <StatBlock
           stats={[
             { value: Number(item.distance_km).toFixed(2), label: 'km' },
-            { value: oblikujTrajanje(item.duration), label: 'čas' },
-            { value: item.pace ?? '0:00', label: 'tempo/km' },
+            { value: oblikujTrajanje(item.duration), label: 'time' },
+            { value: item.pace ?? '0:00', label: 'pace/km' },
           ]}
         />
 
@@ -134,7 +134,7 @@ export default function RunsScreen() {
             <View style={styles.extraStatItem}>
               <IconSymbol name="arrow.up.right" size={14} color={AuroraColors.primary} />
               <ThemedText type="caption" variant="muted">
-                {item.elevation_m}m višina
+                {item.elevation_m}m elevation
               </ThemedText>
             </View>
           </View>
@@ -154,7 +154,7 @@ export default function RunsScreen() {
       <ThemedView style={styles.container}>
         <View style={styles.loadingContainer}>
           <ThemedText type="body" variant="secondary">
-            Nalaganje...
+            Loading...
           </ThemedText>
         </View>
       </ThemedView>
@@ -164,13 +164,13 @@ export default function RunsScreen() {
   return (
     <ThemedView style={styles.container}>
       <ScreenHeader
-        title="Moji teki"
+        title="My Runs"
         subtitle={`${mesecOznaka} · ${skupnaRazdalja} KM · ${stevilkaTekov}`}
         actions={[{ icon: 'chart.line.uptrend.xyaxis', onPress: () => usmerjevalnik.push('/analytics') }]}
       />
 
       {teki.length === 0 ? (
-        <EmptyState icon="figure.run" title="Še ni tekov" subtitle="Pojdite na zavihek Tek in začnite slediti!" />
+        <EmptyState icon="figure.run" title="No runs yet" subtitle="Go to the Run tab and start tracking!" />
       ) : (
         <FlatList
           data={teki}

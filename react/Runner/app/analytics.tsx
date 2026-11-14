@@ -14,19 +14,19 @@ import { getUserRuns, intervalToSeconds } from '@/services/runsService';
 import { createPost, uploadPostImage } from '@/services/socialService';
 import { Run } from '@/services/supabase';
 
-// ── Koledarja aktivnosti (GitHub-ov slog): trenutni mesec + celo leto ──
-// Teden začne v ponedeljek, tako kot povsod drugod v tej aplikaciji.
-const DAN_HEADER = ['P', 'T', 'S', 'Č', 'P', 'S', 'N'];
-const DAN_OZNAKE_LETO: (string | null)[] = ['Pon', null, 'Sre', null, 'Pet', null, null];
+// ── Activity calendars (GitHub-style): current month + full year ──
+// Week starts on Monday, same as everywhere else in this app.
+const DAN_HEADER = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const DAN_OZNAKE_LETO: (string | null)[] = ['Mon', null, 'Wed', null, 'Fri', null, null];
 const TEDNOV_NAZAJ = 53;
 const DNEVI_V_TEDNU = 7;
 const LETO_CELICA = 11;
 const LETO_CELICA_ZAZOR = 3;
 const LETO_OZNAKA_SIRINA = 22;
 
-// 5-stopenjska lestvica intenzivnosti, zgrajena iz obstoječih zelenih
-// odtenkov Grove palete — isti "hex + alpha" vzorec kot GradientRings v
-// constants/theme.ts, ne novih barv.
+// 5-step intensity scale, built from the existing Grove palette greens —
+// same "hex + alpha" pattern as GradientRings in constants/theme.ts,
+// not new colors.
 const BARVE_TOPLOTE = [
   AuroraColors.surface,
   AuroraColors.forestGreen + '66',
@@ -34,7 +34,7 @@ const BARVE_TOPLOTE = [
   AuroraColors.leafGreen + 'AA',
   AuroraColors.leafGreen,
 ];
-// Besedilo številke dneva mora biti berljivo na vsaki stopnji ozadja.
+// Day-number text must stay readable against every background step.
 const BESEDILO_TOPLOTE = [undefined, AuroraColors.text, AuroraColors.text, AuroraColors.onPrimary, AuroraColors.onPrimary];
 
 interface Dan {
@@ -56,14 +56,13 @@ const stopnjaBarve = (stevilo: number): number => {
   return 4;
 };
 
-// Lokalni YYYY-MM-DD (brez toISOString, ki bi zamaknil datum na UTC)
+// Local YYYY-MM-DD (no toISOString, which would shift the date to UTC)
 const kljucDatuma = (d: Date): string => {
   const p = (n: number) => n.toString().padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 
-const steviloTekovBesedilo = (n: number): string =>
-  n === 1 ? 'tek' : n === 2 ? 'teka' : n === 3 || n === 4 ? 'teki' : 'tekov';
+const steviloTekovBesedilo = (n: number): string => (n === 1 ? 'run' : 'runs');
 
 export default function AnalyticsScreen() {
   const barvnaShema = useColorScheme();
@@ -83,8 +82,8 @@ export default function AnalyticsScreen() {
   const zajemRef = useRef<ViewShot>(null);
   const letniDrsnikRef = useRef<ScrollView>(null);
 
-  // Ponovno naloži ob vsakem fokusu, da se "najdaljši tek/čas" takoj
-  // posodobita, ko se vrneš sem po novem teku, ki podre dosedanji rekord.
+  // Reload on every focus so "longest run/time" update immediately when
+  // you come back here after a new run that beats the existing record.
   useFocusEffect(
     useCallback(() => {
       naloziTeke();
@@ -96,7 +95,7 @@ export default function AnalyticsScreen() {
       const rezultat = await getUserRuns(undefined, { limit: 1000 });
       setTeki(rezultat.data);
     } catch (napaka) {
-      console.error('Napaka pri nalaganju analitike:', napaka);
+      console.error('Error loading analytics:', napaka);
     } finally {
       setNalaganje(false);
     }
@@ -112,7 +111,7 @@ export default function AnalyticsScreen() {
 
   const danes = useMemo(() => new Date(), []);
   const imeMeseca = useMemo(() => {
-    const ime = danes.toLocaleDateString('sl-SI', { month: 'long', year: 'numeric' });
+    const ime = danes.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     return ime.charAt(0).toUpperCase() + ime.slice(1);
   }, [danes]);
 
@@ -127,8 +126,8 @@ export default function AnalyticsScreen() {
     return { najdaljsiTekKm: km, najdaljsiCasSek: sek };
   }, [teki]);
 
-  // ── Koledar trenutnega meseca ──
-  // Prazne celice pred 1. in po zadnjem dnevu, da je vsaka vrstica poln teden.
+  // ── Current month calendar ──
+  // Empty cells before day 1 and after the last day, so every row is a full week.
   const mesecneVrstice = useMemo(() => {
     const leto = danes.getFullYear();
     const mesecIdx = danes.getMonth();
@@ -164,7 +163,7 @@ export default function AnalyticsScreen() {
     return { stevilTekovMesec: stevilo, kmMesec: km };
   }, [teki, danes]);
 
-  // ── Letni koledar (GitHub-ov slog, zadnjih 53 tednov) ──
+  // ── Yearly calendar (GitHub-style, last 53 weeks) ──
   const tedniLeto = useMemo(() => {
     const danesL = new Date();
     danesL.setHours(0, 0, 0, 0);
@@ -198,7 +197,7 @@ export default function AnalyticsScreen() {
       const mesec = prviDan.getMonth();
       if (mesec === zadnjiMesec) return null;
       zadnjiMesec = mesec;
-      return prviDan.toLocaleDateString('sl-SI', { month: 'short' }).replace('.', '');
+      return prviDan.toLocaleDateString('en-US', { month: 'short' }).replace('.', '');
     });
   }, [tedniLeto]);
 
@@ -215,18 +214,18 @@ export default function AnalyticsScreen() {
     return `${minute}:${sek.toString().padStart(2, '0')}`;
   };
 
-  // ── Izvoz trenutnega meseca kot slika (deli ali objavi na Feed) ──
+  // ── Export current month as an image (share or post to Feed) ──
   const izvoziMesec = async () => {
     if (!zajemRef.current?.capture) return;
     try {
       setIzvazanje(true);
       const uri = await zajemRef.current.capture();
       setZajetaSlikaUri(uri);
-      setOpisDeljenja(''); // brez privzetega besedila — uporabnik napiše svoje
+      setOpisDeljenja(''); // no default text — user writes their own
       setDeliModalVidna(true);
     } catch (napaka) {
-      console.error('Napaka pri izvozu:', napaka);
-      Alert.alert('Napaka', 'Izvoz slike ni uspel');
+      console.error('Error exporting:', napaka);
+      Alert.alert('Error', 'Failed to export image');
     } finally {
       setIzvazanje(false);
     }
@@ -236,7 +235,7 @@ export default function AnalyticsScreen() {
     if (!zajetaSlikaUri) return;
     const naVoljo = await Sharing.isAvailableAsync();
     if (!naVoljo) {
-      Alert.alert('Ni na voljo', 'Deljenje ni podprto na tej napravi');
+      Alert.alert('Not available', 'Sharing is not supported on this device');
       return;
     }
     await Sharing.shareAsync(zajetaSlikaUri);
@@ -248,21 +247,21 @@ export default function AnalyticsScreen() {
     try {
       const nalozitev = await uploadPostImage(zajetaSlikaUri);
       if (!nalozitev.success || !nalozitev.url) {
-        Alert.alert('Napaka', nalozitev.error || 'Nalaganje slike ni uspelo');
+        Alert.alert('Error', nalozitev.error || 'Failed to upload image');
         return;
       }
       const rezultat = await createPost({
         type: 'photo',
-        title: `Mesečni pregled – ${imeMeseca}`,
+        title: `Monthly Recap – ${imeMeseca}`,
         content: opisDeljenja.trim() || undefined,
         image_url: nalozitev.url,
       });
       if (rezultat.success) {
         setDeliModalVidna(false);
         setZajetaSlikaUri(null);
-        Alert.alert('Uspeh', 'Pregled objavljen na feed!');
+        Alert.alert('Success', 'Recap posted to Feed!');
       } else {
-        Alert.alert('Napaka', rezultat.error || 'Objava ni uspela');
+        Alert.alert('Error', rezultat.error || 'Failed to post');
       }
     } finally {
       setObjavljanje(false);
@@ -273,7 +272,7 @@ export default function AnalyticsScreen() {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ThemedText type="body" variant="secondary">Nalaganje...</ThemedText>
+          <ThemedText type="body" variant="secondary">Loading...</ThemedText>
         </View>
       </ThemedView>
     );
@@ -290,26 +289,26 @@ export default function AnalyticsScreen() {
         <TouchableOpacity onPress={() => usmerjevalnik.back()} style={styles.backButtonIcon}>
           <IconSymbol name="chevron.left" size={24} color={barve.text} />
         </TouchableOpacity>
-        <ThemedText type="h3">Analitika</ThemedText>
+        <ThemedText type="h3">Analytics</ThemedText>
         <View style={styles.backButtonIcon} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Najdaljši tek & najdaljši čas — skupaj zgoraj, posodobita se ob vsakem fokusu */}
+        {/* Longest run & longest time — together at top, update on every focus */}
         <View style={styles.statsRow}>
           <View style={[styles.statCard, kartaBarve]}>
             <IconSymbol name="arrow.up.right" size={20} color={barve.primary} />
             <ThemedText type="h2" variant="primary" style={styles.statCardValue}>{najdaljsiTekKm.toFixed(2)} km</ThemedText>
-            <ThemedText type="caption" variant="muted">Najdaljši tek</ThemedText>
+            <ThemedText type="caption" variant="muted">Longest run</ThemedText>
           </View>
           <View style={[styles.statCard, kartaBarve]}>
             <IconSymbol name="stopwatch" size={20} color={barve.primary} />
             <ThemedText type="h2" variant="primary" style={styles.statCardValue}>{oblikujCas(najdaljsiCasSek)}</ThemedText>
-            <ThemedText type="caption" variant="muted">Najdaljši čas teka</ThemedText>
+            <ThemedText type="caption" variant="muted">Longest run time</ThemedText>
           </View>
         </View>
 
-        {/* Koledar trenutnega meseca — zajet za izvoz/deljenje v Feed */}
+        {/* Current month calendar — captured for export/sharing to Feed */}
         <ViewShot ref={zajemRef} options={{ format: 'png', quality: 0.95 }}>
           <View style={[styles.card, kartaBarve]}>
             <View style={styles.cardHeader}>
@@ -360,11 +359,11 @@ export default function AnalyticsScreen() {
             </View>
 
             <View style={styles.legendRow}>
-              <ThemedText type="caption" variant="muted">Manj</ThemedText>
+              <ThemedText type="caption" variant="muted">Less</ThemedText>
               {BARVE_TOPLOTE.map((b, i) => (
                 <View key={i} style={[styles.legendCell, { backgroundColor: b, borderColor: barve.border }]} />
               ))}
-              <ThemedText type="caption" variant="muted">Več</ThemedText>
+              <ThemedText type="caption" variant="muted">More</ThemedText>
             </View>
 
             <View style={styles.brandingRow}>
@@ -374,10 +373,10 @@ export default function AnalyticsScreen() {
           </View>
         </ViewShot>
 
-        {/* Letni koledar aktivnosti — GitHub-ov slog, zadnjih 53 tednov */}
+        {/* Yearly activity calendar — GitHub-style, last 53 weeks */}
         <View style={[styles.card, kartaBarve, styles.yearCard]}>
           <ThemedText type="bodyBold" style={styles.yearCardTitle}>
-            {steviloTekovLeto} {steviloTekovBesedilo(steviloTekovLeto)} v zadnjem letu
+            {steviloTekovLeto} {steviloTekovBesedilo(steviloTekovLeto)} in the last year
           </ThemedText>
 
           <ScrollView
@@ -427,11 +426,11 @@ export default function AnalyticsScreen() {
           </ScrollView>
 
           <View style={styles.legendRow}>
-            <ThemedText type="caption" variant="muted">Manj</ThemedText>
+            <ThemedText type="caption" variant="muted">Less</ThemedText>
             {BARVE_TOPLOTE.map((b, i) => (
               <View key={i} style={[styles.legendCell, { backgroundColor: b, borderColor: barve.border }]} />
             ))}
-            <ThemedText type="caption" variant="muted">Več</ThemedText>
+            <ThemedText type="caption" variant="muted">More</ThemedText>
           </View>
         </View>
       </ScrollView>
@@ -440,7 +439,7 @@ export default function AnalyticsScreen() {
         <View style={styles.overlay}>
           <ThemedView style={[styles.modal, { backgroundColor: jeTema ? barve.card : '#FFFFFF' }]}>
             <View style={[styles.modalHeader, { backgroundColor: barve.primary }]}>
-              <ThemedText type="bodyBold" lightColor={AuroraColors.onPrimary} darkColor={AuroraColors.onPrimary}>Izvozi pregled</ThemedText>
+              <ThemedText type="bodyBold" lightColor={AuroraColors.onPrimary} darkColor={AuroraColors.onPrimary}>Export recap</ThemedText>
               <TouchableOpacity onPress={() => setDeliModalVidna(false)}>
                 <IconSymbol name="xmark" size={22} color={AuroraColors.onPrimary} />
               </TouchableOpacity>
@@ -453,7 +452,7 @@ export default function AnalyticsScreen() {
                 style={[styles.captionInput, { backgroundColor: barve.background, borderColor: barve.border, color: barve.text }]}
                 value={opisDeljenja}
                 onChangeText={setOpisDeljenja}
-                placeholder="Opis objave..."
+                placeholder="Caption..."
                 placeholderTextColor={barve.textMuted}
                 multiline
                 maxLength={280}
@@ -466,7 +465,7 @@ export default function AnalyticsScreen() {
                 activeOpacity={0.7}>
                 <IconSymbol name="newspaper.fill" size={18} color={AuroraColors.onPrimary} />
                 <ThemedText type="bodyBold" lightColor={AuroraColors.onPrimary} darkColor={AuroraColors.onPrimary}>
-                  {objavljanje ? 'Objavljanje...' : 'Objavi v Feed'}
+                  {objavljanje ? 'Posting...' : 'Post to Feed'}
                 </ThemedText>
               </TouchableOpacity>
 
@@ -475,7 +474,7 @@ export default function AnalyticsScreen() {
                 onPress={deliNativno}
                 activeOpacity={0.7}>
                 <IconSymbol name="square.and.arrow.up" size={18} color={barve.primary} />
-                <ThemedText type="bodyBold" variant="primary">Deli / Shrani</ThemedText>
+                <ThemedText type="bodyBold" variant="primary">Share / Save</ThemedText>
               </TouchableOpacity>
             </View>
           </ThemedView>
@@ -519,8 +518,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // Koledar trenutnega meseca je zavit v ta omejen-širinski ovoj, da je
-  // manjši in bolj kompakten kot prej (celice so flex:1 znotraj njega).
+  // Current month calendar is wrapped in this width-limited wrapper so it's
+  // smaller and more compact than before (cells are flex:1 inside it).
   monthShrinkWrap: { maxWidth: 260, width: '100%', alignSelf: 'center' },
   weekHeaderRow: { flexDirection: 'row', gap: 5, marginBottom: 5 },
   monthGridRow: { flexDirection: 'row', gap: 5, marginBottom: 5 },
@@ -551,7 +550,7 @@ const styles = StyleSheet.create({
     marginTop: Spacing.md,
   },
 
-  // Letni koledar (GitHub-ov slog)
+  // Yearly calendar (GitHub-style)
   yearCard: { marginBottom: Spacing.xl },
   yearCardTitle: { marginBottom: Spacing.md },
   letoGridLine: { flexDirection: 'row', alignItems: 'flex-start' },

@@ -104,7 +104,7 @@ export default function GroupChatScreen() {
               ...prej,
               {
                 ...rezultat.message!,
-                profiles: { username: '', display_name: 'Vi', avatar_url: null },
+                profiles: { username: '', display_name: 'You', avatar_url: null },
               },
             ],
       );
@@ -126,7 +126,7 @@ export default function GroupChatScreen() {
       <View style={[styles.bubbleRow, jeMoje ? styles.bubbleRowMine : styles.bubbleRowTheirs]}>
         {!jeMoje && (
           <ThemedText type="caption" variant="muted" style={styles.senderName}>
-            {item.profiles?.display_name || item.profiles?.username || 'Tekač'}
+            {item.profiles?.display_name || item.profiles?.username || 'Runner'}
           </ThemedText>
         )}
         <View
@@ -155,7 +155,7 @@ export default function GroupChatScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           {skupina && <View style={[styles.colorDot, { backgroundColor: skupina.color }]} />}
-          <ThemedText type="bodyBold" numberOfLines={1}>{skupina?.name || 'Skupina'}</ThemedText>
+          <ThemedText type="bodyBold" numberOfLines={1}>{skupina?.name || 'Group'}</ThemedText>
         </View>
         <View style={styles.headerBtn} />
       </View>
@@ -163,7 +163,7 @@ export default function GroupChatScreen() {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
         {nalaganje ? (
           <View style={styles.emptyState}>
-            <ThemedText type="body" variant="secondary">Nalaganje...</ThemedText>
+            <ThemedText type="body" variant="secondary">Loading...</ThemedText>
           </View>
         ) : (
           <FlatList
@@ -175,7 +175,7 @@ export default function GroupChatScreen() {
             onContentSizeChange={pomakniNaKonec}
             ListEmptyComponent={
               <View style={styles.emptyState}>
-                <ThemedText type="body" variant="muted">Bodite prvi, ki nekaj napiše 👋</ThemedText>
+                <ThemedText type="body" variant="muted">Be the first to say something 👋</ThemedText>
               </View>
             }
           />
@@ -186,7 +186,7 @@ export default function GroupChatScreen() {
             style={[styles.input, { backgroundColor: isDark ? colors.background : colors.backgroundSecondary, color: colors.text }]}
             value={osnutek}
             onChangeText={setOsnutek}
-            placeholder="Sporočilo skupini..."
+            placeholder="Message the group..."
             placeholderTextColor={colors.textMuted}
             multiline
             maxLength={2000}

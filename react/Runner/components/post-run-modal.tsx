@@ -41,12 +41,12 @@ export default function PostRunModal({
   const [deljenje, setDeljenje] = useState(false);
   const kartcaRef = useRef<ViewShot>(null);
 
-  // Objavi tek na Feed – pošlje podatke o teku skupaj z opisom na strežnik
+  // Post the run to the Feed – sends the run data together with the caption to the server
   const obdelajObjavo = async () => {
     if (!run) return;
 
     if (!opis.trim()) {
-      Alert.alert('Napaka', 'Prosimo, dodajte opis');
+      Alert.alert('Error', 'Please add a caption');
       return;
     }
 
@@ -54,7 +54,7 @@ export default function PostRunModal({
 
     const rezultat = await createPost({
       type: 'run',
-      title: run.title || `Tek dne ${new Date(run.run_date).toLocaleDateString()}`,
+      title: run.title || `Run on ${new Date(run.run_date).toLocaleDateString()}`,
       content: opis.trim(),
       run_id: run.id,
     });
@@ -63,15 +63,15 @@ export default function PostRunModal({
       setOpis('');
       onPost();
       onClose();
-      Alert.alert('Uspeh', 'Tek objavljen na feed!');
+      Alert.alert('Success', 'Run posted to feed!');
     } else {
-      Alert.alert('Napaka', rezultat.error || 'Objava teka ni uspela');
+      Alert.alert('Error', rezultat.error || 'Failed to post run');
     }
     setObjavljanje(false);
   };
 
-  // Zajemi kartico povzetka kot sliko in jo deli prek sistemskega menija
-  // (Instagram Stories jo med cilji ponudi samodejno za slike).
+  // Capture the summary card as an image and share it via the system sheet
+  // (Instagram Stories offers it automatically among targets for images).
   const deliKartico = async () => {
     if (!kartcaRef.current?.capture) return;
     setDeljenje(true);
@@ -79,13 +79,13 @@ export default function PostRunModal({
       const uri = await kartcaRef.current.capture();
       const naVoljo = await Sharing.isAvailableAsync();
       if (!naVoljo) {
-        Alert.alert('Ni na voljo', 'Deljenje ni podprto na tej napravi');
+        Alert.alert('Not available', 'Sharing is not supported on this device');
         return;
       }
       await Sharing.shareAsync(uri);
     } catch (napaka) {
-      console.error('Napaka pri deljenju kartice:', napaka);
-      Alert.alert('Napaka', 'Deljenje slike ni uspelo');
+      console.error('Error sharing card:', napaka);
+      Alert.alert('Error', 'Failed to share image');
     } finally {
       setDeljenje(false);
     }
@@ -109,18 +109,18 @@ export default function PostRunModal({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <ThemedView style={[styles.modal, { backgroundColor: barvnaShema === 'dark' ? barve.card : '#FFFFFF' }]}>
-          {/* Glava */}
+          {/* Header */}
           <View style={[styles.header, { backgroundColor: barve.primary }]}>
-            <ThemedText style={styles.headerTitle}>Objavi svoj tek</ThemedText>
+            <ThemedText style={styles.headerTitle}>Post your run</ThemedText>
             <TouchableOpacity onPress={onClose}>
               <IconSymbol name="xmark" size={24} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
 
           <ScrollView style={styles.scrollArea} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-            {/* Kartica povzetka — zajeta za deljenje (Instagram Stories ipd.) */}
+            {/* Summary card — captured for sharing (Instagram Stories etc.) */}
             <View style={styles.shareCardHeaderRow}>
-              <ThemedText type="bodyBold">Povzetek teka</ThemedText>
+              <ThemedText type="bodyBold">Run summary</ThemedText>
               <View style={styles.shareCardHeaderActions}>
                 {imaPot && (
                   <TouchableOpacity
@@ -163,13 +163,13 @@ export default function PostRunModal({
 
                 <View style={styles.heroStat}>
                   <ThemedText type="h1" style={styles.heroValue}>{run.distance_km.toFixed(2)}</ThemedText>
-                  <ThemedText type="caption" variant="muted" style={styles.heroLabel}>KILOMETROV</ThemedText>
+                  <ThemedText type="caption" variant="muted" style={styles.heroLabel}>KILOMETERS</ThemedText>
                 </View>
 
                 <StatBlock
                   stats={[
-                    { value: oblikujTrajanje(run.duration), label: 'čas' },
-                    { value: run.pace ?? '0:00', label: 'tempo/km' },
+                    { value: oblikujTrajanje(run.duration), label: 'time' },
+                    { value: run.pace ?? '0:00', label: 'pace/km' },
                   ]}
                 />
 
@@ -188,22 +188,30 @@ export default function PostRunModal({
                       stats={[
                         {
                           value: formatArea(territoryResult!.claimed_area_m2 ?? 0),
-                          label: ukradenoSkupaj > 0 ? 'pridobljeno' : 'ozemlje pridobljeno',
+                          label: ukradenoSkupaj > 0 ? 'gained' : 'territory gained',
                         },
-                        ...(ukradenoSkupaj > 0 ? [{ value: formatArea(ukradenoSkupaj), label: 'ukradeno' }] : []),
+                        ...(ukradenoSkupaj > 0 ? [{ value: formatArea(ukradenoSkupaj), label: 'cleared' }] : []),
                         ...(territoryResult!.weakened_count
-                          ? [{ value: String(territoryResult!.weakened_count), label: 'oslabljeno' }]
+                          ? [{ value: String(territoryResult!.weakened_count), label: 'weakened' }]
                           : []),
                       ]}
                     />
+                    {!!territoryResult!.bounty_earned && (
+                      <View style={styles.coinsRow}>
+                        <IconSymbol name="bounty.fill" size={16} color={AuroraColors.accentAmber} />
+                        <ThemedText type="bodyBold" lightColor={AuroraColors.accentAmber} darkColor={AuroraColors.accentAmber}>
+                          +{territoryResult!.bounty_earned} {besedaZaKovance(territoryResult!.bounty_earned)} from bounty
+                        </ThemedText>
+                      </View>
+                    )}
                   </View>
                 ) : (
                   <ThemedText type="caption" variant="muted" style={styles.noZoneHint}>
                     {territoryResult?.reason === 'daily_limit_reached'
-                      ? 'Ozemlje lahko zasežete enkrat na dan — poskusite jutri'
+                      ? 'You can only claim territory once a day — try again tomorrow'
                       : !territoryResult || territoryResult.reason === 'loop_not_closed'
-                        ? 'Sklenite zanko nazaj do začetka, da zasežete ozemlje'
-                        : 'Zaseg ozemlja ni uspel'}
+                        ? 'Close the loop back to the start to claim territory'
+                        : 'Territory claim failed'}
                   </ThemedText>
                 )}
 
@@ -214,9 +222,9 @@ export default function PostRunModal({
               </View>
             </ViewShot>
 
-            {/* Vnos opisa */}
+            {/* Caption input */}
             <View style={styles.inputContainer}>
-              <ThemedText style={styles.label}>Kaj vam je na misli?</ThemedText>
+              <ThemedText style={styles.label}>What's on your mind?</ThemedText>
               <TextInput
                 style={[
                   styles.input,
@@ -228,7 +236,7 @@ export default function PostRunModal({
                 ]}
                 value={opis}
                 onChangeText={setOpis}
-                placeholder="Delite svojo tekalno izkušnjo..."
+                placeholder="Share your running experience..."
                 placeholderTextColor={barve.icon}
                 multiline
                 numberOfLines={4}
@@ -237,19 +245,19 @@ export default function PostRunModal({
               <ThemedText style={styles.charCount}>{opis.length}/280</ThemedText>
             </View>
 
-            {/* Objavi na Feed */}
+            {/* Post to Feed */}
             <TouchableOpacity
               style={[styles.postButton, { backgroundColor: barve.primary }, objavljanje && { opacity: 0.6 }]}
               onPress={obdelajObjavo}
               disabled={objavljanje}>
               <ThemedText style={styles.postButtonText}>
-                {objavljanje ? 'Objavljanje...' : 'Objavi na Feed'}
+                {objavljanje ? 'Posting...' : 'Post to Feed'}
               </ThemedText>
             </TouchableOpacity>
 
-            {/* Preskoči */}
+            {/* Skip */}
             <TouchableOpacity style={styles.skipButton} onPress={onClose}>
-              <ThemedText style={[styles.skipButtonText, { color: barve.icon }]}>Preskoči</ThemedText>
+              <ThemedText style={[styles.skipButtonText, { color: barve.icon }]}>Skip</ThemedText>
             </TouchableOpacity>
           </ScrollView>
         </ThemedView>

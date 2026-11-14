@@ -2,6 +2,7 @@ import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { AuroraColors, Colors } from '@/constants/theme';
+import { latLngToHexCell, hexCellKey, HexCellId } from '@/services/territoryService';
 
 export interface RunningMapProps {
   latitude: number;
@@ -81,7 +82,9 @@ const generateLeafletHTML = (lat: number, lng: number, isDark: boolean, trailCol
   <div id="map"></div>
   <script>
     var trailColor = '${trailColor}';
-    
+    var HEX_SIZE_M = 43.2; // mirrors hex_size_m() in supabase/migrations
+    var EARTH_R = 6378137;
+
     // Initialize map
     var map = L.map('map', {
       center: [${lat}, ${lng}],
@@ -104,34 +107,66 @@ const generateLeafletHTML = (lat: number, lng: number, isDark: boolean, trailCol
 
     var currentMarker = L.marker([${lat}, ${lng}], { icon: currentIcon }).addTo(map);
 
-    // Route polyline – uses the user's chosen trail color
-    var routeCoords = [];
-    var routeLine = L.polyline([], {
-      color: trailColor,
-      weight: 5,
-      opacity: 0.85,
-      smoothFactor: 1,
-      lineCap: 'round',
-      lineJoin: 'round'
-    }).addTo(map);
+    // The trail is drawn as the hexagons the runner has actually crossed,
+    // not a line dragged behind them — see addHexes(). hexPolys/drawnHexKeys
+    // track what's already on the map so repeated ticks over the same hex
+    // (GPS fires every ~2m, a hex is ~43m wide) are cheap no-ops.
+    var hexLayer = L.featureGroup().addTo(map);
+    var drawnHexKeys = {};
+    var hexPolys = [];
 
-    // Glow / shadow line behind the main trail for depth
-    var glowLine = L.polyline([], {
-      color: trailColor,
-      weight: 10,
-      opacity: 0.25,
-      smoothFactor: 1,
-      lineCap: 'round',
-      lineJoin: 'round'
-    }).addTo(map);
+    function mercToLatLng(x, y) {
+      var lng = (x / EARTH_R) * 180 / Math.PI;
+      var lat = (2 * Math.atan(Math.exp(y / EARTH_R)) - Math.PI / 2) * 180 / Math.PI;
+      return [lat, lng];
+    }
 
-    // Start marker (will be set when run starts)
+    // Mirrors hex_polygon(col, row) (supabase/migrations) — six corners of
+    // the flat-top hex cell, in lat/lng.
+    function hexCellLatLngs(col, row) {
+      var r = HEX_SIZE_M;
+      var cx = col * 1.5 * r;
+      var cy = (Math.sqrt(3) * col / 2 + Math.sqrt(3) * row) * r;
+      var pts = [];
+      for (var i = 0; i <= 6; i++) {
+        var ang = (Math.PI / 180) * (60 * (i % 6));
+        pts.push(mercToLatLng(cx + r * Math.cos(ang), cy + r * Math.sin(ang)));
+      }
+      return pts;
+    }
+
+    function addHexes(cells) {
+      if (!cells) return;
+      for (var i = 0; i < cells.length; i++) {
+        var c = cells[i];
+        var key = c.col + ',' + c.row;
+        if (drawnHexKeys[key]) continue;
+        drawnHexKeys[key] = true;
+        var poly = L.polygon(hexCellLatLngs(c.col, c.row), {
+          color: trailColor,
+          weight: 1,
+          opacity: 0.9,
+          fillColor: trailColor,
+          fillOpacity: 0.45
+        }).addTo(hexLayer);
+        hexPolys.push(poly);
+      }
+    }
+
+    // Start marker — set explicitly from the run's first GPS point rather
+    // than inferred from a hex (a hex's cell center isn't the exact start
+    // coordinate).
     var startMarker = null;
     var startIcon = L.divIcon({
       className: 'start-marker',
       iconSize: [12, 12],
       iconAnchor: [6, 6]
     });
+
+    function setStart(lat, lng) {
+      if (startMarker) map.removeLayer(startMarker);
+      startMarker = L.marker([lat, lng], { icon: startIcon }).addTo(map);
+    }
 
     // End marker
     var endMarker = null;
@@ -162,38 +197,25 @@ const generateLeafletHTML = (lat: number, lng: number, isDark: boolean, trailCol
     function updateLocation(lat, lng) {
       var latlng = L.latLng(lat, lng);
       currentMarker.setLatLng(latlng);
-      
+
       if (followUser) {
         map.panTo(latlng, { animate: true, duration: 0.5 });
-      }
-    }
-
-    // Function to update route
-    function updateRoute(coords) {
-      if (!coords || coords.length === 0) return;
-      
-      routeCoords = coords.map(function(c) { return [c.latitude, c.longitude]; });
-      routeLine.setLatLngs(routeCoords);
-      glowLine.setLatLngs(routeCoords);
-
-      // Update start marker
-      if (routeCoords.length > 0 && !startMarker) {
-        startMarker = L.marker(routeCoords[0], { icon: startIcon }).addTo(map);
       }
     }
 
     // Function to change trail color dynamically
     function changeTrailColor(newColor) {
       trailColor = newColor;
-      routeLine.setStyle({ color: newColor });
-      glowLine.setStyle({ color: newColor });
+      for (var i = 0; i < hexPolys.length; i++) {
+        hexPolys[i].setStyle({ color: newColor, fillColor: newColor });
+      }
     }
 
     // Function to set running state
     function setRunning(running) {
       isRunning = running;
       followUser = running;
-      
+
       var el = currentMarker.getElement();
       if (el) {
         var div = el.querySelector('.pulse-marker') || el;
@@ -204,74 +226,60 @@ const generateLeafletHTML = (lat: number, lng: number, isDark: boolean, trailCol
         }
       }
 
-      if (!running && routeCoords.length > 1) {
-        // Add end marker
+      if (!running) {
+        // Add end marker at the last known position
         if (endMarker) map.removeLayer(endMarker);
-        endMarker = L.marker(routeCoords[routeCoords.length - 1], { icon: endIcon }).addTo(map);
-        
-        // Fit bounds to show entire route
-        if (routeCoords.length > 1) {
-          map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
-        }
+        endMarker = L.marker(currentMarker.getLatLng(), { icon: endIcon }).addTo(map);
+
+        // Fit bounds to show every claimed hex
+        try {
+          var b = hexLayer.getBounds();
+          if (b.isValid()) map.fitBounds(b, { padding: [40, 40] });
+        } catch (e) {}
       }
     }
 
     // Function to reset map for new run
     function resetMap() {
-      routeCoords = [];
-      routeLine.setLatLngs([]);
-      glowLine.setLatLngs([]);
+      hexLayer.clearLayers();
+      hexPolys = [];
+      drawnHexKeys = {};
       if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
       if (endMarker) { map.removeLayer(endMarker); endMarker = null; }
       followUser = true;
     }
 
     // Listen for messages from React Native
+    function handleBridgeMessage(data) {
+      switch(data.type) {
+        case 'updateLocation':
+          updateLocation(data.lat, data.lng);
+          break;
+        case 'addHexes':
+          addHexes(data.cells);
+          break;
+        case 'setStart':
+          setStart(data.lat, data.lng);
+          break;
+        case 'setRunning':
+          setRunning(data.running);
+          break;
+        case 'reset':
+          resetMap();
+          break;
+        case 'setTrailColor':
+          changeTrailColor(data.color);
+          break;
+      }
+    }
+
     document.addEventListener('message', function(event) {
-      try {
-        var data = JSON.parse(event.data);
-        switch(data.type) {
-          case 'updateLocation':
-            updateLocation(data.lat, data.lng);
-            break;
-          case 'updateRoute':
-            updateRoute(data.coords);
-            break;
-          case 'setRunning':
-            setRunning(data.running);
-            break;
-          case 'reset':
-            resetMap();
-            break;
-          case 'setTrailColor':
-            changeTrailColor(data.color);
-            break;
-        }
-      } catch(e) {}
+      try { handleBridgeMessage(JSON.parse(event.data)); } catch(e) {}
     });
 
     // Also listen for window messages (Android compatibility)
     window.addEventListener('message', function(event) {
-      try {
-        var data = JSON.parse(event.data);
-        switch(data.type) {
-          case 'updateLocation':
-            updateLocation(data.lat, data.lng);
-            break;
-          case 'updateRoute':
-            updateRoute(data.coords);
-            break;
-          case 'setRunning':
-            setRunning(data.running);
-            break;
-          case 'reset':
-            resetMap();
-            break;
-          case 'setTrailColor':
-            changeTrailColor(data.color);
-            break;
-        }
-      } catch(e) {}
+      try { handleBridgeMessage(JSON.parse(event.data)); } catch(e) {}
     });
 
     // Signal ready
@@ -286,8 +294,15 @@ const generateLeafletHTML = (lat: number, lng: number, isDark: boolean, trailCol
 export default function RunningMap({ latitude, longitude, colors, route = [], isRunning = false, trailColor = '#C9D54A' }: RunningMapProps) {
   const webViewRef = useRef<WebView>(null);
   const isReadyRef = useRef(false);
-  const lastSentRouteLength = useRef(0);
   const wasRunningRef = useRef(isRunning);
+
+  // Every GPS point gets converted to the hex cell it falls in; only the
+  // genuinely-new cells (a hex is ~43m wide, GPS fires every ~2m) are ever
+  // sent across the bridge. visitedHexList keeps insertion order so a late
+  // 'ready' can resync the WebView with everything crossed so far.
+  const visitedHexKeysRef = useRef<Set<string>>(new Set());
+  const visitedHexListRef = useRef<HexCellId[]>([]);
+  const lastProcessedIndexRef = useRef(0);
 
   const isDark = colors === Colors.dark;
 
@@ -299,11 +314,11 @@ export default function RunningMap({ latitude, longitude, colors, route = [], is
 
   // The page is built once per mount from whatever position/color we have at
   // that moment; every update after that travels over the postMessage bridge
-  // below instead. Baking live `latitude`/`longitude` into the HTML string
-  // would change the WebView's `source.html` on every GPS tick, and changing
+  // below. Baking live `latitude`/`longitude` into the HTML string would
+  // change the WebView's `source.html` on every GPS tick, and changing
   // `source` forces react-native-webview to fully reload the page — wiping
-  // the Leaflet map (and the trail drawn on it) several times a second while
-  // running, which is why the trace never used to actually show up.
+  // the Leaflet map (and the hex trail drawn on it) several times a second
+  // while running, which is why the trace never used to actually show up.
   const initialRef = useRef({ latitude, longitude, trailColor });
   const html = useMemo(
     () =>
@@ -311,28 +326,44 @@ export default function RunningMap({ latitude, longitude, colors, route = [], is
     [isDark],
   );
 
-  // Location, route and running-state all land in one effect so they're
-  // applied in a deterministic order: a freshly started run clears the
-  // previous run's trail/markers before the new route starts streaming in.
+  // Location, newly-crossed hexes, and running-state all land in one effect
+  // so they're applied in a deterministic order: a freshly started run
+  // clears the previous run's trail/markers before the new one streams in.
   useEffect(() => {
     const justStarted = isRunning && !wasRunningRef.current;
     wasRunningRef.current = isRunning;
 
     if (justStarted) {
       sendMessage({ type: 'reset' });
-      lastSentRouteLength.current = 0;
+      visitedHexKeysRef.current = new Set();
+      visitedHexListRef.current = [];
+      lastProcessedIndexRef.current = 0;
+      const start = route[0] ?? { latitude, longitude };
+      sendMessage({ type: 'setStart', lat: start.latitude, lng: start.longitude });
     }
 
     sendMessage({ type: 'updateLocation', lat: latitude, lng: longitude });
 
-    if (route.length > lastSentRouteLength.current) {
-      sendMessage({ type: 'updateRoute', coords: route });
-      lastSentRouteLength.current = route.length;
+    if (route.length > lastProcessedIndexRef.current) {
+      const newCells: HexCellId[] = [];
+      for (let i = lastProcessedIndexRef.current; i < route.length; i++) {
+        const cell = latLngToHexCell(route[i].latitude, route[i].longitude);
+        const key = hexCellKey(cell);
+        if (!visitedHexKeysRef.current.has(key)) {
+          visitedHexKeysRef.current.add(key);
+          visitedHexListRef.current.push(cell);
+          newCells.push(cell);
+        }
+      }
+      lastProcessedIndexRef.current = route.length;
+      if (newCells.length > 0) {
+        sendMessage({ type: 'addHexes', cells: newCells });
+      }
     }
 
     sendMessage({ type: 'setRunning', running: isRunning });
     if (!isRunning) {
-      lastSentRouteLength.current = 0;
+      lastProcessedIndexRef.current = 0;
     }
   }, [latitude, longitude, route, isRunning, sendMessage]);
 
@@ -349,8 +380,10 @@ export default function RunningMap({ latitude, longitude, colors, route = [], is
         // Send initial state
         sendMessage({ type: 'updateLocation', lat: latitude, lng: longitude });
         if (route.length > 0) {
-          sendMessage({ type: 'updateRoute', coords: route });
-          lastSentRouteLength.current = route.length;
+          sendMessage({ type: 'setStart', lat: route[0].latitude, lng: route[0].longitude });
+        }
+        if (visitedHexListRef.current.length > 0) {
+          sendMessage({ type: 'addHexes', cells: visitedHexListRef.current });
         }
         sendMessage({ type: 'setRunning', running: isRunning });
         sendMessage({ type: 'setTrailColor', color: trailColor });

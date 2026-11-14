@@ -70,7 +70,7 @@ export default function FriendsScreen() {
         setSteviloSledim(stSledim);
       }
     } catch (napaka) {
-      console.error('Napaka pri nalaganju podatkov:', napaka);
+      console.error('Error loading data:', napaka);
     } finally {
       setNalaganje(false);
       setOsvezevanje(false);
@@ -102,28 +102,28 @@ export default function FriendsScreen() {
   const obdelajSledenje = async (uporabnikId: string) => {
     const rezultat = await followUser(uporabnikId);
     if (rezultat.success) {
-      Alert.alert('Uspeh', 'Zdaj sledite temu uporabniku!');
+      Alert.alert('Success', 'You are now following this user!');
       naloziPodatke();
     } else {
-      Alert.alert('Napaka', rezultat.error || 'Sledenje uporabniku ni uspelo');
+      Alert.alert('Error', rezultat.error || 'Failed to follow user');
     }
   };
 
   const obdelajOdsledenje = (uporabnikId: string, uporabniskoIme: string) => {
     Alert.alert(
-      'Prenehaj slediti',
-      `Ali ste prepričani, da želite prenehati slediti ${uporabniskoIme}?`,
+      'Unfollow',
+      `Are you sure you want to unfollow ${uporabniskoIme}?`,
       [
-        { text: 'Prekliči', style: 'cancel' },
+        { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Prenehaj slediti',
+          text: 'Unfollow',
           style: 'destructive',
           onPress: async () => {
             const rezultat = await unfollowUser(uporabnikId);
             if (rezultat.success) {
               naloziPodatke();
             } else {
-              Alert.alert('Napaka', rezultat.error || 'Odssledenje ni uspelo');
+              Alert.alert('Error', rezultat.error || 'Failed to unfollow');
             }
           },
         },
@@ -152,7 +152,7 @@ export default function FriendsScreen() {
           onPress={() => obdelajOdsledenje(item.id, item.username)}
           style={[styles.pill, styles.pillOutline]}
           activeOpacity={0.7}>
-          <ThemedText type="bodySmall" variant="muted">Prenehaj slediti</ThemedText>
+          <ThemedText type="bodySmall" variant="muted">Unfollow</ThemedText>
         </TouchableOpacity>
       ) : aktivniZavihek === 'search' ? (
         <TouchableOpacity
@@ -163,7 +163,7 @@ export default function FriendsScreen() {
             type="bodySmall"
             lightColor={jeSleden ? AuroraColors.text : AuroraColors.onPrimary}
             darkColor={jeSleden ? AuroraColors.text : AuroraColors.onPrimary}>
-            {jeSleden ? 'Sledim' : 'Sledi'}
+            {jeSleden ? 'Following' : 'Follow'}
           </ThemedText>
         </TouchableOpacity>
       ) : null;
@@ -195,11 +195,11 @@ export default function FriendsScreen() {
   const pridobiPraznoSporocilo = () => {
     switch (aktivniZavihek) {
       case 'following':
-        return 'Še ne sledite nikomur';
+        return "You aren't following anyone yet";
       case 'followers':
-        return 'Še nimate sledilcev';
+        return "You don't have any followers yet";
       case 'search':
-        return iskalniNiz ? 'Ni najdenih uporabnikov' : 'Iščite uporabnike';
+        return iskalniNiz ? 'No users found' : 'Search for users';
       default:
         return '';
     }
@@ -208,8 +208,8 @@ export default function FriendsScreen() {
   return (
     <ThemedView style={styles.container}>
       <ScreenHeader
-        title="Skupnost"
-        subtitle={`${steviloSledim} Sledim · ${steviloSledilcev} Sledilcev`}
+        title="Community"
+        subtitle={`${steviloSledim} Following · ${steviloSledilcev} Followers`}
         actions={[
           { icon: 'magnifyingglass', onPress: () => setAktivniZavihek('search') },
           { icon: 'paperplane.fill', onPress: () => usmerjevalnik.push('/messages'), badge: nepreebranaSporocila },
@@ -217,8 +217,8 @@ export default function FriendsScreen() {
         <View style={styles.segmentedWrap}>
           <SegmentedControl
             segments={[
-              { key: 'following', label: 'Sledim' },
-              { key: 'followers', label: 'Sledilci' },
+              { key: 'following', label: 'Following' },
+              { key: 'followers', label: 'Followers' },
             ]}
             value={aktivniZavihek}
             onChange={(key) => setAktivniZavihek(key as TipZavihka)}
@@ -232,20 +232,20 @@ export default function FriendsScreen() {
             value={iskalniNiz}
             onChangeText={setIskalniNiz}
             onSearch={obdelajIskanje}
-            placeholder="Iskanje po uporabniškem imenu"
+            placeholder="Search by username"
           />
         </Animated.View>
       )}
 
       {nalaganje ? (
         <View style={styles.loadingContainer}>
-          <ThemedText type="body" variant="secondary">Nalaganje...</ThemedText>
+          <ThemedText type="body" variant="secondary">Loading...</ThemedText>
         </View>
       ) : pridobiPodatkeSeznama().length === 0 ? (
         <EmptyState
           icon="person.2.fill"
           title={pridobiPraznoSporocilo()}
-          ctaLabel={aktivniZavihek !== 'search' ? 'Poišči uporabnike' : undefined}
+          ctaLabel={aktivniZavihek !== 'search' ? 'Find users' : undefined}
           onPressCta={aktivniZavihek !== 'search' ? () => setAktivniZavihek('search') : undefined}
         />
       ) : (

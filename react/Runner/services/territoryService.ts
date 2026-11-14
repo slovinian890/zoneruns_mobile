@@ -11,7 +11,15 @@
  * RPCs and shapes the results for the map + UI.
  */
 
-import { supabase, ClaimTerritoryResult, TerritoryFeature } from './supabase';
+import {
+  supabase,
+  ClaimTerritoryResult,
+  TerritoryFeature,
+  HexCell,
+  FortifyHexResult,
+  PlaceBountyResult,
+  CancelBountyResult,
+} from './supabase';
 
 export const LOOP_CLOSE_THRESHOLD_M = 40;
 export const MIN_LOOP_AREA_M2 = 300;
@@ -168,4 +176,185 @@ export function isLoopReady(route: Array<{ latitude: number; longitude: number }
     if (d > maxOut) maxOut = d;
   }
   return maxOut > LOOP_CLOSE_THRESHOLD_M * 1.5;
+}
+
+// ── Hex grid math ────────────────────────────────────────────
+// Mirrors hex_polygon()/hex_size_m() (supabase/migrations/012_hex_defense_levels.sql)
+// so the client can tell which hex a GPS point falls in without a round
+// trip — used to paint the live run trail as crossed hexagons, and to turn
+// a map tap into a (col,row) for fortify/bounty. Keep in sync if the server
+// formulas ever change.
+
+export const HEX_SIZE_M = 43.2;
+
+const EARTH_RADIUS_M = 6378137;
+
+export interface HexCellId {
+  col: number;
+  row: number;
+}
+
+/** Spherical Web Mercator (EPSG:3857) forward projection, in meters. */
+function lngLatToMercator(lat: number, lng: number): { x: number; y: number } {
+  const x = ((lng * Math.PI) / 180) * EARTH_RADIUS_M;
+  const y = Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) * EARTH_RADIUS_M;
+  return { x, y };
+}
+
+/** Standard axial hex "round to nearest cell" (cube-coordinate rounding). */
+function hexRound(q: number, r: number): HexCellId {
+  const s = -q - r;
+  let rq = Math.round(q);
+  let rr = Math.round(r);
+  const rs = Math.round(s);
+  const qDiff = Math.abs(rq - q);
+  const rDiff = Math.abs(rr - r);
+  const sDiff = Math.abs(rs - s);
+  if (qDiff > rDiff && qDiff > sDiff) {
+    rq = -rr - rs;
+  } else if (rDiff > sDiff) {
+    rr = -rq - rs;
+  }
+  return { col: rq, row: rr };
+}
+
+/** Which hex cell (col,row) a lat/lng point falls in. */
+export function latLngToHexCell(lat: number, lng: number): HexCellId {
+  const { x, y } = lngLatToMercator(lat, lng);
+  const q = ((2 / 3) * x) / HEX_SIZE_M;
+  const axialR = y / (HEX_SIZE_M * Math.sqrt(3)) - q / 2;
+  return hexRound(q, axialR);
+}
+
+export function hexCellKey(cell: HexCellId): string {
+  return `${cell.col},${cell.row}`;
+}
+
+/**
+ * Mirrors the server's is_hex_ally() (migrations/017_clan_hex_warfare.sql)
+ * exactly — "is this hex mine to heal/fortify" from the viewer's current
+ * side (their active clan if they have one, else themselves). Used
+ * client-side only for display (map highlight, action-modal framing); the
+ * server re-checks this for real on every claim/fortify/bounty call.
+ */
+export function isHexAlly(
+  ownerUserId: string | null,
+  ownerGroupId: string | null,
+  myUserId: string | null,
+  myGroupId: string | null,
+): boolean {
+  if (!ownerUserId || !myUserId) return false;
+  if (myGroupId && ownerGroupId) return ownerGroupId === myGroupId;
+  if (!myGroupId && !ownerGroupId) return ownerUserId === myUserId;
+  if (myGroupId && !ownerGroupId) return ownerUserId === myUserId;
+  return false;
+}
+
+// ── Hex grid / fortify / bounty RPCs ────────────────────────
+
+/**
+ * Every hex (claimed or neutral) in the given map bounds, with owner,
+ * defense level, and bounty totals — the data behind the tappable "battle
+ * map" view (see components/hex-battle-map.tsx).
+ */
+export async function getHexesInBounds(
+  minLat: number,
+  minLng: number,
+  maxLat: number,
+  maxLng: number,
+): Promise<HexCell[]> {
+  try {
+    const { data, error } = await supabase.rpc('get_hexes_in_bounds', {
+      min_lat: minLat,
+      min_lng: minLng,
+      max_lat: maxLat,
+      max_lng: maxLng,
+    });
+
+    if (error) {
+      console.warn('getHexesInBounds error:', error.message);
+      return [];
+    }
+
+    return (data ?? [])
+      .filter((row: any) => !!row.geojson)
+      .map((row: any) => ({
+        hexCol: row.hex_col,
+        hexRow: row.hex_row,
+        userId: row.user_id,
+        username: row.username,
+        trailColor: row.trail_color,
+        level: row.level,
+        maxLevel: row.max_level,
+        bountyTotal: Number(row.bounty_total) || 0,
+        myBounty: Number(row.my_bounty) || 0,
+        ownerGroupId: row.owner_group_id,
+        groupName: row.group_name,
+        groupColor: row.group_color,
+        geojson: JSON.parse(row.geojson),
+      }));
+  } catch (e) {
+    console.warn('getHexesInBounds exception:', e);
+    return [];
+  }
+}
+
+/** Mirrors fortify_hex()'s cost CASE — keep in sync. Null once already at the level-5 ceiling. */
+export const MAX_HEX_LEVEL = 10;
+
+export function fortifyNextCost(maxLevel: number): number | null {
+  const costs: Record<number, number> = { 3: 15, 4: 30, 5: 60, 6: 120, 7: 240, 8: 480, 9: 960, 10: 1920 };
+  return costs[maxLevel + 1] ?? null;
+}
+
+/** Spend coins to raise a hex you own's defense ceiling by one level (max 5), healing it to full in the same move. */
+export async function fortifyHex(hexCol: number, hexRow: number): Promise<FortifyHexResult> {
+  try {
+    const { data, error } = await supabase.rpc('fortify_hex', { p_hex_col: hexCol, p_hex_row: hexRow });
+    if (error) {
+      console.warn('fortifyHex error:', error.message);
+      return { success: false };
+    }
+    return (data as FortifyHexResult) ?? { success: false };
+  } catch (e) {
+    console.warn('fortifyHex exception:', e);
+    return { success: false };
+  }
+}
+
+/**
+ * Escrow `totalAmount` coins split evenly across `hexes` (all must belong
+ * to someone else) as a reward for whoever lands the hit that finishes
+ * each one off. Paid out automatically — see claim_territory_from_run.
+ */
+export async function placeBounty(hexes: HexCellId[], totalAmount: number): Promise<PlaceBountyResult> {
+  try {
+    const { data, error } = await supabase.rpc('place_bounty', {
+      p_hexes: hexes.map((h) => ({ col: h.col, row: h.row })),
+      p_total_amount: totalAmount,
+    });
+    if (error) {
+      console.warn('placeBounty error:', error.message);
+      return { success: false };
+    }
+    return (data as PlaceBountyResult) ?? { success: false };
+  } catch (e) {
+    console.warn('placeBounty exception:', e);
+    return { success: false };
+  }
+}
+
+/** Refunds every active bounty the current user placed on one hex. */
+export async function cancelMyBounty(hexCol: number, hexRow: number): Promise<CancelBountyResult> {
+  try {
+    const { data, error } = await supabase.rpc('cancel_my_bounty', { p_hex_col: hexCol, p_hex_row: hexRow });
+    if (error) {
+      console.warn('cancelMyBounty error:', error.message);
+      return { success: false };
+    }
+    return (data as CancelBountyResult) ?? { success: false };
+  } catch (e) {
+    console.warn('cancelMyBounty exception:', e);
+    return { success: false };
+  }
 }

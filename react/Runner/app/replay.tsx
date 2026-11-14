@@ -65,13 +65,13 @@ export default function ReplayScreen() {
       const uri = await kartcaRef.current.capture();
       const naVoljo = await Sharing.isAvailableAsync();
       if (!naVoljo) {
-        Alert.alert('Ni na voljo', 'Deljenje ni podprto na tej napravi');
+        Alert.alert('Not available', 'Sharing is not supported on this device');
         return;
       }
       await Sharing.shareAsync(uri);
     } catch (napaka) {
-      console.error('Napaka pri deljenju replaya:', napaka);
-      Alert.alert('Napaka', 'Deljenje ni uspelo');
+      console.error('Error sharing replay:', napaka);
+      Alert.alert('Error', 'Sharing failed');
     } finally {
       setDeljenje(false);
     }
@@ -95,13 +95,13 @@ export default function ReplayScreen() {
       {nalaganje ? (
         <View style={styles.loadingContainer}>
           <ThemedText type="body" variant="secondary">
-            Nalaganje...
+            Loading...
           </ThemedText>
         </View>
       ) : !run || coords.length < 2 ? (
         <View style={styles.loadingContainer}>
           <ThemedText type="body" variant="secondary">
-            Ta tek nima shranjene poti za replay.
+            This run has no saved route to replay.
           </ThemedText>
         </View>
       ) : (
@@ -109,7 +109,7 @@ export default function ReplayScreen() {
           <ViewShot ref={kartcaRef} options={{ format: 'png', quality: 0.95 }} style={styles.cardWrap}>
             <GlassCard style={styles.card}>
               <ThemedText type="caption" variant="muted" style={styles.title}>
-                {(run.title || 'TEK').toUpperCase()}
+                {(run.title || 'RUN').toUpperCase()}
               </ThemedText>
 
               <Animated.View style={[styles.mapWrap, mapStyle]}>
@@ -126,8 +126,8 @@ export default function ReplayScreen() {
                 <StatBlock
                   stats={[
                     { value: run.distance_km.toFixed(2), label: 'km' },
-                    { value: oblikujTrajanje(run.duration), label: 'čas' },
-                    { value: run.pace ?? '0:00', label: 'tempo/km' },
+                    { value: oblikujTrajanje(run.duration), label: 'time' },
+                    { value: run.pace ?? '0:00', label: 'pace/km' },
                   ]}
                 />
               </Animated.View>
@@ -147,7 +147,7 @@ export default function ReplayScreen() {
             disabled={deljenje}>
             <IconSymbol name="square.and.arrow.up" size={18} color={AuroraColors.onPrimary} />
             <ThemedText type="bodyBold" lightColor={AuroraColors.onPrimary} darkColor={AuroraColors.onPrimary}>
-              {deljenje ? 'Pripravljam...' : 'Deli replay'}
+              {deljenje ? 'Preparing...' : 'Share replay'}
             </ThemedText>
           </TouchableOpacity>
         </View>

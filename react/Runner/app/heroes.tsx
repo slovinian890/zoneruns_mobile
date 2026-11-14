@@ -25,10 +25,10 @@ import { getCurrentUserStats } from '@/services/statsService';
 import { MyHero } from '@/services/supabase';
 
 const RARITY_LABELS: Record<string, string> = {
-  common: 'Navaden',
-  rare: 'Redek',
-  epic: 'Epski',
-  legendary: 'Legendaren',
+  common: 'Common',
+  rare: 'Rare',
+  epic: 'Epic',
+  legendary: 'Legendary',
 };
 
 export default function HeroesScreen() {
@@ -48,7 +48,7 @@ export default function HeroesScreen() {
       setJunaki(seznam);
       setKovanci(statsRez.success ? statsRez.stats?.coins ?? 0 : 0);
     } catch (napaka) {
-      console.error('Napaka pri nalaganju junakov:', napaka);
+      console.error('Error loading heroes:', napaka);
     } finally {
       setNalaganje(false);
       setOsvezevanje(false);
@@ -69,24 +69,24 @@ export default function HeroesScreen() {
   const sporociloZaRazlog = (razlog: string | undefined, strosek?: number, trenutniKovanci?: number) => {
     switch (razlog) {
       case 'not_enough_coins':
-        return `Nimate dovolj kovancev (potrebno ${strosek}, imate ${trenutniKovanci}).`;
+        return `Not enough coins (need ${strosek}, you have ${trenutniKovanci}).`;
       case 'max_tier':
-        return 'Ta junak je že na najvišjem nivoju.';
+        return 'This hero is already at max level.';
       case 'already_owned':
-        return 'Tega junaka že imate.';
+        return 'You already own this hero.';
       default:
-        return 'Nekaj je šlo narobe.';
+        return 'Something went wrong.';
     }
   };
 
   const obdelajOdklepanje = (junak: MyHero) => {
     Alert.alert(
       junak.name,
-      `Odkleni za ${junak.unlock_cost} kovancev?`,
+      `Unlock for ${junak.unlock_cost} coins?`,
       [
-        { text: 'Prekliči', style: 'cancel' },
+        { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Odkleni',
+          text: 'Unlock',
           onPress: async () => {
             setObdelavaId(junak.hero_id);
             const rez = await unlockHero(junak.hero_id);
@@ -94,7 +94,7 @@ export default function HeroesScreen() {
             if (rez.success) {
               naloziPodatke();
             } else {
-              Alert.alert('Napaka', sporociloZaRazlog(rez.reason, rez.cost, rez.coins));
+              Alert.alert('Error', sporociloZaRazlog(rez.reason, rez.cost, rez.coins));
             }
           },
         },
@@ -110,7 +110,7 @@ export default function HeroesScreen() {
     if (rez.success) {
       setJunaki((prej) => prej.map((j) => ({ ...j, is_active: j.hero_id === junak.hero_id })));
     } else {
-      Alert.alert('Napaka', 'Izbira junaka ni uspela.');
+      Alert.alert('Error', 'Failed to select hero.');
     }
   };
 
@@ -119,11 +119,11 @@ export default function HeroesScreen() {
     const strosek = heroUpgradeCost(trenutniNivo);
     Alert.alert(
       junak.name,
-      `Nadgradi na nivo ${trenutniNivo + 1} za ${strosek} kovancev?`,
+      `Upgrade to level ${trenutniNivo + 1} for ${strosek} coins?`,
       [
-        { text: 'Prekliči', style: 'cancel' },
+        { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Nadgradi',
+          text: 'Upgrade',
           onPress: async () => {
             setObdelavaId(junak.hero_id);
             const rez = await upgradeHero(junak.hero_id);
@@ -134,7 +134,7 @@ export default function HeroesScreen() {
               );
               setKovanci((prej) => prej - strosek);
             } else {
-              Alert.alert('Napaka', sporociloZaRazlog(rez.reason, rez.cost, rez.coins));
+              Alert.alert('Error', sporociloZaRazlog(rez.reason, rez.cost, rez.coins));
             }
           },
         },
@@ -147,14 +147,14 @@ export default function HeroesScreen() {
   return (
     <ThemedView style={styles.container}>
       <ScreenHeader
-        title="Junaki"
-        subtitle={junaki.length > 0 ? `${steviloOdklenjenih}/${junaki.length} odklenjenih` : undefined}
+        title="Heroes"
+        subtitle={junaki.length > 0 ? `${steviloOdklenjenih}/${junaki.length} unlocked` : undefined}
         onBack={() => usmerjevalnik.back()}
       />
 
       {nalaganje ? (
         <View style={styles.loadingContainer}>
-          <ThemedText type="body" variant="secondary">Nalaganje...</ThemedText>
+          <ThemedText type="body" variant="secondary">Loading...</ThemedText>
         </View>
       ) : (
         <ScrollView
@@ -166,7 +166,7 @@ export default function HeroesScreen() {
               <IconSymbol name="coins.fill" size={26} color={AuroraColors.accentAmber} />
               <View style={{ flex: 1 }}>
                 <ThemedText type="h2" variant="primary">{kovanci}</ThemedText>
-                <ThemedText type="bodySmall" variant="muted">Kovanci na voljo</ThemedText>
+                <ThemedText type="bodySmall" variant="muted">Coins available</ThemedText>
               </View>
             </View>
           </GlassCard>
@@ -210,11 +210,11 @@ export default function HeroesScreen() {
                   {junak.owned ? (
                     <>
                       <ThemedText type="caption" variant="muted" style={styles.tierText}>
-                        Nivo {tier}/{HERO_TIER_COUNT}
+                        Level {tier}/{HERO_TIER_COUNT}
                       </ThemedText>
                       {naMaksimumu ? (
                         <View style={styles.maxChip}>
-                          <ThemedText type="caption" variant="muted">MAKS.</ThemedText>
+                          <ThemedText type="caption" variant="muted">MAX</ThemedText>
                         </View>
                       ) : (
                         <TouchableOpacity

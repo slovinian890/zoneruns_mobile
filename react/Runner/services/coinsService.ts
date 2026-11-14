@@ -13,22 +13,35 @@
 import { supabase, CoinTransaction, ClaimDailyLoginResult } from './supabase';
 import { getCurrentUser } from './authService';
 
+/** Short label for one coin_transactions row, for history lists (badges.tsx). */
+export function labelForCoinTransaction(tx: CoinTransaction): string {
+  switch (tx.kind) {
+    case 'login':
+      return 'daily reward';
+    case 'fortify':
+      return 'hex fortify';
+    case 'bounty_place':
+      return 'bounty placed';
+    case 'bounty_payout':
+      return 'bounty payout';
+    case 'bounty_refund':
+      return 'bounty refund';
+    default:
+      return `${tx.distance_km.toFixed(1)} km run`;
+  }
+}
+
 /** Mirrors award_run_coins()'s SQL exactly — keep the two in sync. */
 export function coinsForDistance(distanceKm: number): number {
   return Math.max(1, Math.floor(distanceKm / 5) + 1);
 }
 
 /**
- * Slovenian noun declension for "kovanec" (coin) isn't a simple suffix swap
- * (kovanec → kovanca, not "kovanekca"), so this spells out the four forms
- * instead of guessing one from a stem. Shared by every screen that shows a
- * coin count (post-run-modal, daily-login-provider, ...).
+ * Pluralized "coin"/"coins" label, shared by every screen that shows a coin
+ * count (post-run-modal, daily-login-provider, ...).
  */
 export function besedaZaKovance(n: number): string {
-  if (n === 1) return 'kovanec';
-  if (n === 2) return 'kovanca';
-  if (n === 3 || n === 4) return 'kovanci';
-  return 'kovancev';
+  return n === 1 ? 'coin' : 'coins';
 }
 
 /** Current user's recent coin payouts, most recent first. */

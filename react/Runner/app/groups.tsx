@@ -57,7 +57,7 @@ export default function GroupsScreen() {
       if (rezultatMojih.success) setMojeSkupine(rezultatMojih.groups ?? []);
       setLestvica(rezultatLestvice);
     } catch (napaka) {
-      console.error('Napaka pri nalaganju skupin:', napaka);
+      console.error('Error loading groups:', napaka);
     } finally {
       setNalaganje(false);
       setOsvezevanje(false);
@@ -93,7 +93,7 @@ export default function GroupsScreen() {
       naloziPodatke();
       usmerjevalnik.push({ pathname: '/group-detail', params: { groupId: rezultat.group.id } });
     } else {
-      Alert.alert('Napaka', rezultat.error || 'Pridružitev ni uspela');
+      Alert.alert('Error', rezultat.error || 'Could not join the group');
     }
   };
 
@@ -111,7 +111,7 @@ export default function GroupsScreen() {
           {!item.is_public && <IconSymbol name="lock.fill" size={12} color={AuroraColors.textMuted} style={{ marginLeft: 6 }} />}
           {item.role === 'owner' && <IconSymbol name="star.fill" size={12} color={AuroraColors.primary} style={{ marginLeft: 6 }} />}
         </View>
-        <ThemedText type="caption" variant="muted">{item.member_count}/{GROUP_MEMBER_LIMIT} članov</ThemedText>
+        <ThemedText type="caption" variant="muted">{item.member_count}/{GROUP_MEMBER_LIMIT} members</ThemedText>
       </View>
       <IconSymbol name="chevron.right" size={18} color={AuroraColors.textFaint} />
     </TouchableOpacity>
@@ -124,10 +124,10 @@ export default function GroupsScreen() {
         <View style={[styles.colorDot, { backgroundColor: item.color }]} />
         <View style={{ flex: 1 }}>
           <ThemedText type="bodyBold">{item.name}</ThemedText>
-          <ThemedText type="caption" variant="muted">{item.member_count}/{GROUP_MEMBER_LIMIT} članov</ThemedText>
+          <ThemedText type="caption" variant="muted">{item.member_count}/{GROUP_MEMBER_LIMIT} members</ThemedText>
         </View>
         {zeClan ? (
-          <ThemedText type="bodySmall" variant="muted">Ste član</ThemedText>
+          <ThemedText type="bodySmall" variant="muted">Member</ThemedText>
         ) : (
           <TouchableOpacity
             style={styles.joinButton}
@@ -135,7 +135,7 @@ export default function GroupsScreen() {
             disabled={pridruzevanje}
             activeOpacity={0.7}>
             <ThemedText type="bodySmall" lightColor={AuroraColors.onPrimary} darkColor={AuroraColors.onPrimary}>
-              Pridruži se
+              Join
             </ThemedText>
           </TouchableOpacity>
         )}
@@ -156,7 +156,7 @@ export default function GroupsScreen() {
         <View style={[styles.colorDot, { backgroundColor: item.color }]} />
         <View style={{ flex: 1 }}>
           <ThemedText type="bodyBold">{item.name}</ThemedText>
-          <ThemedText type="caption" variant="muted">{item.member_count}/{GROUP_MEMBER_LIMIT} članov</ThemedText>
+          <ThemedText type="caption" variant="muted">{item.member_count}/{GROUP_MEMBER_LIMIT} members</ThemedText>
         </View>
         <ThemedText type="bodyBold" variant="primary">{formatArea(item.total_area_m2)}</ThemedText>
       </TouchableOpacity>
@@ -181,9 +181,9 @@ export default function GroupsScreen() {
 
   const praznoSporocilo = () => {
     switch (aktivniZavihek) {
-      case 'moje': return 'Še niste v nobeni skupini';
-      case 'odkrij': return iskalniNiz ? 'Ni najdenih skupin' : 'Iščite javne skupine po imenu';
-      case 'lestvica': return 'Ni še nobene javne skupine';
+      case 'moje': return "You're not in any groups yet";
+      case 'odkrij': return iskalniNiz ? 'No groups found' : 'Search public groups by name';
+      case 'lestvica': return 'No public groups yet';
     }
   };
 
@@ -193,7 +193,7 @@ export default function GroupsScreen() {
   return (
     <ThemedView style={styles.container}>
       <ScreenHeader
-        title="Skupine"
+        title="Groups"
         onBack={() => usmerjevalnik.back()}
         actions={[{ icon: 'plus', onPress: () => usmerjevalnik.push('/create-group') }]}>
         <View style={styles.joinRow}>
@@ -201,7 +201,7 @@ export default function GroupsScreen() {
             style={styles.joinInput}
             value={kodaZaPridruzitev}
             onChangeText={(t) => setKodaZaPridruzitev(t.toUpperCase())}
-            placeholder="Imate kodo? Vnesite jo"
+            placeholder="Have a code? Enter it"
             autoCapitalize="characters"
             maxLength={6}
             onSubmitEditing={() => obdelajPridruzitev(kodaZaPridruzitev)}
@@ -218,9 +218,9 @@ export default function GroupsScreen() {
         <View style={styles.segmentedWrap}>
           <SegmentedControl
             segments={[
-              { key: 'moje', label: 'Moje' },
-              { key: 'odkrij', label: 'Odkrij' },
-              { key: 'lestvica', label: 'Lestvica' },
+              { key: 'moje', label: 'Mine' },
+              { key: 'odkrij', label: 'Discover' },
+              { key: 'lestvica', label: 'Leaderboard' },
             ]}
             value={aktivniZavihek}
             onChange={(key) => setAktivniZavihek(key as TipZavihka)}
@@ -230,13 +230,13 @@ export default function GroupsScreen() {
 
       {aktivniZavihek === 'odkrij' && (
         <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(160)} style={styles.searchSection}>
-          <SearchBar value={iskalniNiz} onChangeText={setIskalniNiz} onSearch={obdelajIskanje} placeholder="Iskanje javnih skupin" />
+          <SearchBar value={iskalniNiz} onChangeText={setIskalniNiz} onSearch={obdelajIskanje} placeholder="Search public groups" />
         </Animated.View>
       )}
 
       {nalaganje ? (
         <View style={styles.loadingContainer}>
-          <ThemedText type="body" variant="secondary">Nalaganje...</ThemedText>
+          <ThemedText type="body" variant="secondary">Loading...</ThemedText>
         </View>
       ) : podatkiSeznama().length === 0 ? (
         <EmptyState icon="person.2.fill" title={praznoSporocilo()} />

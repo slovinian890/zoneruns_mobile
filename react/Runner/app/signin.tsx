@@ -21,7 +21,7 @@ export default function SignInScreen() {
   const [nalaganje, setNalaganje] = useState(false);
   const [prikaziGeslo, setPrikaziGeslo] = useState(false);
 
-  // Animacija za ikono
+  // Icon animation
   const dihalniPulz = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -52,17 +52,17 @@ export default function SignInScreen() {
 
   const obdelajPrijavo = async () => {
     if (!eposta.trim()) {
-      Alert.alert('Napaka', 'Prosimo, vnesite vaš e-poštni naslov');
+      Alert.alert('Error', 'Please enter your email address');
       return;
     }
 
     if (!preveriEposto(eposta)) {
-      Alert.alert('Napaka', 'Prosimo, vnesite veljaven e-poštni naslov');
+      Alert.alert('Error', 'Please enter a valid email address');
       return;
     }
 
     if (!geslo) {
-      Alert.alert('Napaka', 'Prosimo, vnesite vaše geslo');
+      Alert.alert('Error', 'Please enter your password');
       return;
     }
 
@@ -73,33 +73,33 @@ export default function SignInScreen() {
     if (rezultat.success) {
       router.replace('/(tabs)');
     } else {
-      Alert.alert('Prijava neuspešna', rezultat.error || 'Neveljavni podatki');
+      Alert.alert('Sign in failed', rezultat.error || 'Invalid credentials');
     }
   };
 
   const obdelajRegistracijo = async () => {
     if (!eposta.trim()) {
-      Alert.alert('Napaka', 'Prosimo, vnesite vaš e-poštni naslov');
+      Alert.alert('Error', 'Please enter your email address');
       return;
     }
 
     if (!preveriEposto(eposta)) {
-      Alert.alert('Napaka', 'Prosimo, vnesite veljaven e-poštni naslov');
+      Alert.alert('Error', 'Please enter a valid email address');
       return;
     }
 
     if (!uporabniskoIme.trim()) {
-      Alert.alert('Napaka', 'Prosimo, vnesite uporabniško ime');
+      Alert.alert('Error', 'Please enter a username');
       return;
     }
 
     if (uporabniskoIme.trim().length < 3) {
-      Alert.alert('Napaka', 'Uporabniško ime mora imeti vsaj 3 znake');
+      Alert.alert('Error', 'Username must be at least 3 characters');
       return;
     }
 
     if (!preveriGeslo(geslo)) {
-      Alert.alert('Napaka', 'Geslo mora imeti vsaj 6 znakov');
+      Alert.alert('Error', 'Password must be at least 6 characters');
       return;
     }
 
@@ -112,18 +112,18 @@ export default function SignInScreen() {
     setNalaganje(false);
 
     if (rezultat.success) {
-      // Preveri, ali je potrebna potrditev e-pošte
+      // Check whether email confirmation is required
       if (rezultat.user && !rezultat.session) {
         Alert.alert(
-          'Preverite e-pošto',
-          'Poslali smo vam potrditveno povezavo. Preverite e-pošto za potrditev računa.',
-          [{ text: 'V redu' }]
+          'Check your email',
+          "We've sent you a confirmation link. Check your email to confirm your account.",
+          [{ text: 'OK' }]
         );
       } else {
         router.replace('/(tabs)');
       }
     } else {
-      Alert.alert('Registracija neuspešna', rezultat.error || 'Računa ni mogoče ustvariti');
+      Alert.alert('Sign up failed', rezultat.error || 'Could not create account');
     }
   };
 
@@ -165,19 +165,19 @@ export default function SignInScreen() {
 
             <ThemedText type="h1" style={styles.title}>Run Tracker</ThemedText>
             <ThemedText type="body" variant="secondary" style={styles.subtitle}>
-              {nacin === 'signin' ? 'Dobrodošli nazaj!' : 'Ustvarite svoj račun'}
+              {nacin === 'signin' ? 'Welcome back!' : 'Create your account'}
             </ThemedText>
           </View>
 
           <View style={styles.form}>
             {nacin === 'signup' && (
               <View style={styles.inputContainer}>
-                <ThemedText type="bodyBold" style={styles.label}>Uporabniško ime</ThemedText>
+                <ThemedText type="bodyBold" style={styles.label}>Username</ThemedText>
                 <Input
                   icon="person.fill"
                   value={uporabniskoIme}
                   onChangeText={setUporabniskoIme}
-                  placeholder="Izberite uporabniško ime"
+                  placeholder="Choose a username"
                   autoCapitalize="none"
                   autoCorrect={false}
                   editable={!nalaganje}
@@ -186,12 +186,12 @@ export default function SignInScreen() {
             )}
 
             <View style={styles.inputContainer}>
-              <ThemedText type="bodyBold" style={styles.label}>E-poštni naslov</ThemedText>
+              <ThemedText type="bodyBold" style={styles.label}>Email address</ThemedText>
               <Input
                 icon="envelope.fill"
                 value={eposta}
                 onChangeText={setEposta}
-                placeholder="vas@email.com"
+                placeholder="you@email.com"
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -200,12 +200,12 @@ export default function SignInScreen() {
             </View>
 
             <View style={styles.inputContainer}>
-              <ThemedText type="bodyBold" style={styles.label}>Geslo</ThemedText>
+              <ThemedText type="bodyBold" style={styles.label}>Password</ThemedText>
               <Input
                 icon="lock.fill"
                 value={geslo}
                 onChangeText={setGeslo}
-                placeholder={nacin === 'signin' ? 'Vnesite geslo' : 'Ustvarite geslo'}
+                placeholder={nacin === 'signin' ? 'Enter password' : 'Create password'}
                 secureTextEntry={!prikaziGeslo}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -222,7 +222,7 @@ export default function SignInScreen() {
               />
               {nacin === 'signup' && (
                 <ThemedText type="caption" variant="muted" style={styles.passwordHint}>
-                  Mora vsebovati vsaj 6 znakov
+                  Must be at least 6 characters
                 </ThemedText>
               )}
             </View>
@@ -233,7 +233,7 @@ export default function SignInScreen() {
                 onPress={() => router.push('/verify')}
                 activeOpacity={0.7}>
                 <ThemedText type="bodySmall" variant="secondary">
-                  Pozabljeno geslo?
+                  Forgot password?
                 </ThemedText>
               </TouchableOpacity>
             )}
@@ -241,8 +241,8 @@ export default function SignInScreen() {
             <Button
               label={
                 nalaganje
-                  ? (nacin === 'signin' ? 'Prijavljanje...' : 'Ustvarjanje računa...')
-                  : (nacin === 'signin' ? 'Prijava' : 'Ustvari račun')
+                  ? (nacin === 'signin' ? 'Signing in...' : 'Creating account...')
+                  : (nacin === 'signin' ? 'Sign in' : 'Create account')
               }
               onPress={obdelajOddajo}
               disabled={nalaganje}
@@ -252,11 +252,11 @@ export default function SignInScreen() {
 
             <View style={styles.toggleContainer}>
               <ThemedText type="body" variant="secondary">
-                {nacin === 'signin' ? 'Nimate računa? ' : 'Že imate račun? '}
+                {nacin === 'signin' ? "Don't have an account? " : 'Already have an account? '}
               </ThemedText>
               <TouchableOpacity onPress={preklopiNacin} disabled={nalaganje}>
                 <ThemedText type="bodyBold" variant="primary">
-                  {nacin === 'signin' ? 'Registracija' : 'Prijava'}
+                  {nacin === 'signin' ? 'Sign up' : 'Sign in'}
                 </ThemedText>
               </TouchableOpacity>
             </View>

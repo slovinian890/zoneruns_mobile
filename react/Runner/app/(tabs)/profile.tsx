@@ -80,15 +80,15 @@ export default function ProfileScreen() {
         setLokacija(rezultat.profile.location || '');
         setSlikaProfilaUrl(rezultat.profile.avatar_url);
 
-        // Strežnik je vir resnice za barvo sledi (vidna drugim pri ozemljih) –
-        // uskladi lokalni predpomnilnik, če se razlikuje.
+        // The server is the source of truth for trail color (visible to
+        // others on their territory) – sync the local cache if it differs.
         if (rezultat.profile.trail_color) {
           setIzbranaBarvaSled(rezultat.profile.trail_color);
           shraniBarvoSledi(rezultat.profile.trail_color);
         }
       }
     } catch (napaka) {
-      console.error('Napaka pri nalaganju profila:', napaka);
+      console.error('Error loading profile:', napaka);
     } finally {
       setNalaganje(false);
     }
@@ -101,16 +101,16 @@ export default function ProfileScreen() {
         setStatistika(rezultat.stats);
       }
     } catch (napaka) {
-      console.error('Napaka pri nalaganju statistike:', napaka);
+      console.error('Error loading stats:', napaka);
     }
   };
 
-  // Izberi sliko iz galerije, naloži jo na strežnik in posodobi URL profilne slike
+  // Pick an image from the gallery, upload it to the server, and update the profile image URL
   const izberSliko = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Potrebno dovoljenje', 'Prosimo, dovolite dostop do galerije za dodajanje profilne slike.');
+        Alert.alert('Permission required', 'Please allow access to your photo library to add a profile picture.');
         return;
       }
 
@@ -126,14 +126,14 @@ export default function ProfileScreen() {
         const rezultatNalozitve = await uploadAvatar(rezultat.assets[0].uri);
         if (rezultatNalozitve.success && rezultatNalozitve.url) {
           setSlikaProfilaUrl(rezultatNalozitve.url);
-          Alert.alert('Uspeh', 'Profilna slika posodobljena!');
+          Alert.alert('Success', 'Profile picture updated!');
         } else {
-          Alert.alert('Napaka', rezultatNalozitve.error || 'Nalaganje slike ni uspelo');
+          Alert.alert('Error', rezultatNalozitve.error || 'Failed to upload image');
         }
         setShranjevanje(false);
       }
     } catch (napaka) {
-      Alert.alert('Napaka', 'Izbira slike ni uspela');
+      Alert.alert('Error', 'Failed to pick image');
       setShranjevanje(false);
     }
   };
@@ -142,7 +142,7 @@ export default function ProfileScreen() {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Potrebno dovoljenje', 'Prosimo, dovolite dostop do kamere za slikanje.');
+        Alert.alert('Permission required', 'Please allow camera access to take a picture.');
         return;
       }
 
@@ -157,33 +157,33 @@ export default function ProfileScreen() {
         const rezultatNalozitve = await uploadAvatar(rezultat.assets[0].uri);
         if (rezultatNalozitve.success && rezultatNalozitve.url) {
           setSlikaProfilaUrl(rezultatNalozitve.url);
-          Alert.alert('Uspeh', 'Profilna slika posodobljena!');
+          Alert.alert('Success', 'Profile picture updated!');
         } else {
-          Alert.alert('Napaka', rezultatNalozitve.error || 'Nalaganje slike ni uspelo');
+          Alert.alert('Error', rezultatNalozitve.error || 'Failed to upload image');
         }
         setShranjevanje(false);
       }
     } catch (napaka) {
-      Alert.alert('Napaka', 'Slikanje ni uspelo');
+      Alert.alert('Error', 'Failed to take picture');
       setShranjevanje(false);
     }
   };
 
   const prikaziIzbirnikSlik = () => {
     Alert.alert(
-      'Profilna slika',
-      'Izberite možnost',
+      'Profile picture',
+      'Choose an option',
       [
-        { text: 'Kamera', onPress: posnamiSliko },
-        { text: 'Galerija', onPress: izberSliko },
-        { text: 'Prekliči', style: 'cancel' },
+        { text: 'Camera', onPress: posnamiSliko },
+        { text: 'Gallery', onPress: izberSliko },
+        { text: 'Cancel', style: 'cancel' },
       ]
     );
   };
 
   const shraniProfil = async () => {
     if (!uporabniskoIme.trim()) {
-      Alert.alert('Napaka', 'Uporabniško ime ne sme biti prazno');
+      Alert.alert('Error', 'Username cannot be empty');
       return;
     }
 
@@ -197,20 +197,20 @@ export default function ProfileScreen() {
     setShranjevanje(false);
 
     if (rezultat.success) {
-      Alert.alert('Uspeh', 'Profil posodobljen!');
+      Alert.alert('Success', 'Profile updated!');
     } else {
-      Alert.alert('Napaka', rezultat.error || 'Posodabljanje profila ni uspelo');
+      Alert.alert('Error', rezultat.error || 'Failed to update profile');
     }
   };
 
   const obdelajOdjavo = async () => {
     Alert.alert(
-      'Odjava',
-      'Ali se res želite odjaviti?',
+      'Sign out',
+      'Are you sure you want to sign out?',
       [
-        { text: 'Prekliči', style: 'cancel' },
+        { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Odjava',
+          text: 'Sign out',
           style: 'destructive',
           onPress: async () => {
             await signOut();
@@ -225,7 +225,7 @@ export default function ProfileScreen() {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ThemedText type="body" variant="secondary">Nalaganje...</ThemedText>
+          <ThemedText type="body" variant="secondary">Loading...</ThemedText>
         </View>
       </ThemedView>
     );
@@ -233,7 +233,7 @@ export default function ProfileScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ScreenHeader title="Profil" />
+      <ScreenHeader title="Profile" />
 
       <ScrollView
         style={styles.content}
@@ -279,35 +279,35 @@ export default function ProfileScreen() {
           </View>
 
           <View style={styles.inputContainer}>
-            <ThemedText type="bodyBold" style={styles.label}>Uporabniško ime</ThemedText>
-            <Input value={uporabniskoIme} onChangeText={setUporabniskoIme} placeholder="Vnesite uporabniško ime" editable={!shranjevanje} />
+            <ThemedText type="bodyBold" style={styles.label}>Username</ThemedText>
+            <Input value={uporabniskoIme} onChangeText={setUporabniskoIme} placeholder="Enter username" editable={!shranjevanje} />
           </View>
 
           <View style={styles.inputContainer}>
-            <ThemedText type="bodyBold" style={styles.label}>Prikazno ime</ThemedText>
-            <Input value={prikaznoIme} onChangeText={setPrikaznoIme} placeholder="Vnesite prikazno ime" editable={!shranjevanje} />
+            <ThemedText type="bodyBold" style={styles.label}>Display name</ThemedText>
+            <Input value={prikaznoIme} onChangeText={setPrikaznoIme} placeholder="Enter display name" editable={!shranjevanje} />
           </View>
 
           <View style={styles.inputContainer}>
-            <ThemedText type="bodyBold" style={styles.label}>Opis</ThemedText>
-            <Input value={opis} onChangeText={setOpis} placeholder="Povejte nam o sebi" multiline editable={!shranjevanje} />
+            <ThemedText type="bodyBold" style={styles.label}>Bio</ThemedText>
+            <Input value={opis} onChangeText={setOpis} placeholder="Tell us about yourself" multiline editable={!shranjevanje} />
           </View>
 
           <View style={styles.inputContainer}>
             <View style={styles.labelWithIcon}>
               <IconSymbol name="location.fill" size={16} color={AuroraColors.textMuted} />
-              <ThemedText type="bodyBold" style={styles.label}>Lokacija</ThemedText>
+              <ThemedText type="bodyBold" style={styles.label}>Location</ThemedText>
             </View>
             <Input
               value={lokacija}
               onChangeText={setLokacija}
-              placeholder="Vnesite svojo lokacijo (npr. Ljubljana, Slovenija)"
+              placeholder="Enter your location (e.g. Ljubljana, Slovenia)"
               editable={!shranjevanje}
             />
           </View>
 
           <Button
-            label={shranjevanje ? 'Shranjevanje...' : 'Shrani profil'}
+            label={shranjevanje ? 'Saving...' : 'Save profile'}
             onPress={shraniProfil}
             disabled={shranjevanje}
             loading={shranjevanje}
@@ -315,14 +315,14 @@ export default function ProfileScreen() {
           />
         </View>
 
-        {/* ── Izbirnik barve sledi ── */}
+        {/* ── Trail color picker ── */}
         <View style={styles.trailColorSection}>
           <View style={styles.trailColorHeader}>
             <IconSymbol name="paintbrush.fill" size={18} color={AuroraColors.primary} />
-            <ThemedText type="h3" style={{ marginLeft: Spacing.xs }}>Barva sledi</ThemedText>
+            <ThemedText type="h3" style={{ marginLeft: Spacing.xs }}>Trail color</ThemedText>
           </View>
           <ThemedText type="bodySmall" variant="muted" style={{ marginBottom: Spacing.md }}>
-            Izberite barvo vaše tekalne sledi na zemljevidu
+            Choose the color of your running trail on the map
           </ThemedText>
           <View style={styles.colorGrid}>
             {TRAIL_COLORS.map((bs) => (
@@ -346,31 +346,31 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             ))}
           </View>
-          {/* Predogled sledi */}
+          {/* Trail preview */}
           <View style={styles.trailPreview}>
             <View style={[styles.trailPreviewDot, { backgroundColor: AuroraColors.success }]} />
             <View style={[styles.trailPreviewLine, { backgroundColor: izbranaBarvaSled }]} />
             <View style={[styles.trailPreviewDot, { backgroundColor: AuroraColors.danger }]} />
           </View>
           <ThemedText type="caption" variant="muted" style={{ textAlign: 'center' }}>
-            {TRAIL_COLORS.find((bs) => bs.hex === izbranaBarvaSled)?.name ?? 'Po meri'}
+            {TRAIL_COLORS.find((bs) => bs.hex === izbranaBarvaSled)?.name ?? 'Custom'}
           </ThemedText>
         </View>
 
         <View style={styles.statsSection}>
-          <ThemedText type="h3" style={styles.sectionTitle}>Vaša statistika</ThemedText>
+          <ThemedText type="h3" style={styles.sectionTitle}>Your stats</ThemedText>
           <GlassCard style={styles.statsCard}>
             <StatBlock
               stats={[
-                { value: String(statistika?.total_runs ?? 0), label: 'Skupaj tekov' },
-                { value: statistika?.total_distance_km?.toFixed(1) ?? '0.0', label: 'Razdalja (km)' },
+                { value: String(statistika?.total_runs ?? 0), label: 'Total runs' },
+                { value: statistika?.total_distance_km?.toFixed(1) ?? '0.0', label: 'Distance (km)' },
               ]}
             />
             <View style={styles.statsRowGap} />
             <StatBlock
               stats={[
-                { value: String(statistika?.current_streak ?? 0), label: 'Trenutni niz' },
-                { value: statistika?.best_pace ?? '--', label: 'Najboljši tempo' },
+                { value: String(statistika?.current_streak ?? 0), label: 'Current streak' },
+                { value: statistika?.best_pace ?? '--', label: 'Best pace' },
               ]}
             />
           </GlassCard>
@@ -380,7 +380,7 @@ export default function ProfileScreen() {
               <IconSymbol name="hexagon.fill" size={22} color={AuroraColors.primary} />
               <View style={{ flex: 1 }}>
                 <ThemedText type="h3" variant="primary">{formatArea(povrsinaOzemlja)}</ThemedText>
-                <ThemedText type="bodySmall" variant="muted">Zaseženo ozemlje</ThemedText>
+                <ThemedText type="bodySmall" variant="muted">Territory captured</ThemedText>
               </View>
             </View>
           </GlassCard>
@@ -389,8 +389,8 @@ export default function ProfileScreen() {
             <View style={styles.territoryCard}>
               <IconSymbol name="trophy.fill" size={22} color={AuroraColors.primary} />
               <View style={{ flex: 1 }}>
-                <ThemedText type="h3" variant="primary">Dosežki</ThemedText>
-                <ThemedText type="bodySmall" variant="muted">{statistika?.coins ?? 0} kovancev · odklenite značke</ThemedText>
+                <ThemedText type="h3" variant="primary">Achievements</ThemedText>
+                <ThemedText type="bodySmall" variant="muted">{statistika?.coins ?? 0} coins · unlock badges</ThemedText>
               </View>
               <IconSymbol name="chevron.right" size={18} color={AuroraColors.textFaint} />
             </View>
@@ -406,8 +406,8 @@ export default function ProfileScreen() {
                 )}
               </View>
               <View style={{ flex: 1 }}>
-                <ThemedText type="h3" variant="primary">Junaki</ThemedText>
-                <ThemedText type="bodySmall" variant="muted">Odkleni in nadgradi svoje junake</ThemedText>
+                <ThemedText type="h3" variant="primary">Heroes</ThemedText>
+                <ThemedText type="bodySmall" variant="muted">Unlock and upgrade your heroes</ThemedText>
               </View>
               <IconSymbol name="chevron.right" size={18} color={AuroraColors.textFaint} />
             </View>
@@ -417,8 +417,8 @@ export default function ProfileScreen() {
             <View style={styles.territoryCard}>
               <IconSymbol name="chart.line.uptrend.xyaxis" size={22} color={AuroraColors.primary} />
               <View style={{ flex: 1 }}>
-                <ThemedText type="h3" variant="primary">Lestvica</ThemedText>
-                <ThemedText type="bodySmall" variant="muted">Primerjajte se z drugimi tekači</ThemedText>
+                <ThemedText type="h3" variant="primary">Leaderboard</ThemedText>
+                <ThemedText type="bodySmall" variant="muted">Compare yourself with other runners</ThemedText>
               </View>
               <IconSymbol name="chevron.right" size={18} color={AuroraColors.textFaint} />
             </View>
@@ -428,8 +428,8 @@ export default function ProfileScreen() {
             <View style={styles.territoryCard}>
               <IconSymbol name="person.2.fill" size={22} color={AuroraColors.primary} />
               <View style={{ flex: 1 }}>
-                <ThemedText type="h3" variant="primary">Skupine</ThemedText>
-                <ThemedText type="bodySmall" variant="muted">Tekmuj v ekipi s prijatelji</ThemedText>
+                <ThemedText type="h3" variant="primary">Groups</ThemedText>
+                <ThemedText type="bodySmall" variant="muted">Compete as a team with friends</ThemedText>
               </View>
               <IconSymbol name="chevron.right" size={18} color={AuroraColors.textFaint} />
             </View>
@@ -438,7 +438,7 @@ export default function ProfileScreen() {
           <TouchableOpacity style={styles.logoutButton} onPress={obdelajOdjavo} activeOpacity={0.7}>
             <IconSymbol name="arrow.right.square.fill" size={20} color={AuroraColors.danger} />
             <ThemedText type="bodyBold" lightColor={AuroraColors.danger} darkColor={AuroraColors.danger}>
-              Odjava
+              Sign out
             </ThemedText>
           </TouchableOpacity>
         </View>

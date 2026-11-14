@@ -24,7 +24,7 @@ export function setBackgroundLocationListener(fn: LocationListener | null) {
 
 TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
   if (error) {
-    console.warn('Napaka pri sledenju lokaciji v ozadju:', error.message);
+    console.warn('Error tracking location in background:', error.message);
     return;
   }
   const locations = (data as { locations?: Location.LocationObject[] } | undefined)?.locations;
@@ -47,8 +47,8 @@ export async function startBackgroundLocationTracking(): Promise<boolean> {
       distanceInterval: 2,
       showsBackgroundLocationIndicator: true,
       foregroundService: {
-        notificationTitle: 'ZoneRuns teče',
-        notificationBody: 'Sledenje vaši poti teka …',
+        notificationTitle: 'ZoneRuns is running',
+        notificationBody: 'Tracking your run route …',
       },
     });
     return true;

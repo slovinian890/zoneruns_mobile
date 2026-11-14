@@ -21,7 +21,7 @@ interface SegmentedControlProps {
 }
 
 /**
- * Glass pill tab switcher (Sledim/Sledilci/search, Moje/Odkrij/Lestvica, …)
+ * Glass pill tab switcher (Following/Followers/search, Mine/Discover/Leaderboard, …)
  * — a sliding chartreuse pill under the active label instead of each segment
  * flipping its own background.
  */

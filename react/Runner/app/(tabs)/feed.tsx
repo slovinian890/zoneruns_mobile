@@ -23,7 +23,7 @@ import { PostWithAuthor, PostCommentWithAuthor, RouteData } from '@/services/sup
 import { intervalToSeconds } from '@/services/runsService';
 import { DEFAULT_TRAIL_COLOR } from '@/services/trailColorService';
 
-// Generira mini Leaflet zemljevid za objave na feedu
+// Generates a mini Leaflet map for feed posts
 const generirajFeedPotHTML = (podatkiPoti: RouteData, jeTema: boolean): string => {
   const koordinate = podatkiPoti.coordinates || [];
   if (koordinate.length === 0) return '';
@@ -79,7 +79,7 @@ const generirajFeedPotHTML = (podatkiPoti: RouteData, jeTema: boolean): string =
 </html>`;
 };
 
-// Generira celozaslonski Leaflet zemljevid za modal s podrobnostmi
+// Generates a full-screen Leaflet map for the details modal
 const generirajPodrobnostiZemljevidHTML = (podatkiPoti: RouteData, jeTema: boolean): string => {
   const koordinate = podatkiPoti.coordinates || [];
   if (koordinate.length === 0) return '';
@@ -121,8 +121,8 @@ const generirajPodrobnostiZemljevidHTML = (podatkiPoti: RouteData, jeTema: boole
       var line = L.polyline(coords, { color: '${barvaLinije}', weight: 4, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(map);
       var startIcon = L.divIcon({ className: 'start-dot', iconSize: [14,14], iconAnchor: [7,7] });
       var endIcon = L.divIcon({ className: 'end-dot', iconSize: [14,14], iconAnchor: [7,7] });
-      L.marker(coords[0], { icon: startIcon }).addTo(map).bindPopup('Začetek');
-      L.marker(coords[coords.length-1], { icon: endIcon }).addTo(map).bindPopup('Konec');
+      L.marker(coords[0], { icon: startIcon }).addTo(map).bindPopup('Start');
+      L.marker(coords[coords.length-1], { icon: endIcon }).addTo(map).bindPopup('End');
       map.fitBounds(line.getBounds(), { padding: [30, 30] });
     }
   </script>
@@ -145,10 +145,10 @@ export default function FeedScreen() {
   const [besediloKomentarja, setBesediloKomentarja] = useState<{ [key: string]: string }>({});
   const [posiljamKomentar, setPosiljamKomentar] = useState(false);
 
-  // Stanje modala s podrobnostmi
+  // Details modal state
   const [podrobnostiObjave, setPodrobnostiObjave] = useState<PostWithAuthor | null>(null);
 
-  // Stanje urejevalnika nove objave
+  // New post composer state
   const [prikaziUrejevalnik, setPrikaziUrejevalnik] = useState(false);
   const [besediloNoveObjave, setBesediloNoveObjave] = useState('');
   const [objavljanje, setObjavljanje] = useState(false);
@@ -179,8 +179,8 @@ export default function FeedScreen() {
         setObjave(rezultat.data ?? []);
       }
     } catch (napaka) {
-      console.error('[FeedScreen] Napaka pri nalaganju objav:', napaka);
-      setNapakaFeeda(napaka instanceof Error ? napaka.message : 'Nalaganje feeda ni uspelo');
+      console.error('[FeedScreen] Error loading posts:', napaka);
+      setNapakaFeeda(napaka instanceof Error ? napaka.message : 'Failed to load feed');
     } finally {
       setNalaganje(false);
       setOsvezevanje(false);
@@ -192,12 +192,12 @@ export default function FeedScreen() {
     naloziObjave();
   };
 
-  // Objavi novo besedilno objavo na feed
+  // Post a new text post to the feed
   const objaviNaFeed = async () => {
     const besedilo = besediloNoveObjave.trim();
     if (!besedilo) return;
     if (!trenutniUporabnikId) {
-      Alert.alert('Napaka', 'Prosimo, prijavite se za objavljanje');
+      Alert.alert('Error', 'Please sign in to post');
       return;
     }
 
@@ -210,14 +210,14 @@ export default function FeedScreen() {
       setPrikaziUrejevalnik(false);
       naloziObjave();
     } else {
-      Alert.alert('Napaka', rezultat.error || 'Objava ni uspela');
+      Alert.alert('Error', rezultat.error || 'Failed to post');
     }
   };
 
-  // Preklopi všeček – pošlje zahtevo na strežnik in lokalno posodobi števec
+  // Toggle like – sends request to the server and updates the count locally
   const obdelajVsecek = async (objava: PostWithAuthor) => {
     if (!trenutniUporabnikId) {
-      Alert.alert('Napaka', 'Prosimo, prijavite se za všečkanje objav');
+      Alert.alert('Error', 'Please sign in to like posts');
       return;
     }
     const rezultat = await toggleLike(objava.id);
@@ -254,7 +254,7 @@ export default function FeedScreen() {
     const besedilo = besediloKomentarja[objavaId]?.trim();
     if (!besedilo) return;
     if (!trenutniUporabnikId) {
-      Alert.alert('Napaka', 'Prosimo, prijavite se za komentiranje');
+      Alert.alert('Error', 'Please sign in to comment');
       return;
     }
     setPosiljamKomentar(true);
@@ -270,7 +270,7 @@ export default function FeedScreen() {
         )
       );
     } else {
-      Alert.alert('Napaka', rezultat.error || 'Dodajanje komentarja ni uspelo');
+      Alert.alert('Error', rezultat.error || 'Failed to add comment');
     }
   };
 
@@ -289,14 +289,14 @@ export default function FeedScreen() {
     const cas = new Date(casovniZig).getTime();
     if (isNaN(cas)) return '';
     const sekunde = Math.floor((Date.now() - cas) / 1000);
-    if (sekunde < 0) return 'pravkar';
-    if (sekunde < 60) return `pred ${sekunde}s`;
+    if (sekunde < 0) return 'just now';
+    if (sekunde < 60) return `${sekunde}s ago`;
     const minute = Math.floor(sekunde / 60);
-    if (minute < 60) return `pred ${minute}min`;
+    if (minute < 60) return `${minute}min ago`;
     const ure = Math.floor(minute / 60);
-    if (ure < 24) return `pred ${ure}h`;
+    if (ure < 24) return `${ure}h ago`;
     const dnevi = Math.floor(ure / 24);
-    return `pred ${dnevi}d`;
+    return `${dnevi}d ago`;
   };
 
   const oblikujCasTeka = (casTeka: string | null | undefined): string => {
@@ -353,7 +353,7 @@ export default function FeedScreen() {
     }
   };
 
-  // ── Modal s podrobnostmi ──
+  // ── Details modal ──
   const izrisiModalPodrobnosti = () => {
     if (!podrobnostiObjave) return null;
     const tek = podrobnostiObjave.runs;
@@ -369,21 +369,21 @@ export default function FeedScreen() {
         <View style={styles.detailOverlay}>
           <ThemedView style={styles.detailModal}>
             <View style={styles.sheetHandle} />
-            {/* Glava */}
+            {/* Header */}
             <View style={styles.detailHeader}>
               <View style={styles.detailHeaderLeft}>
                 <Avatar uri={profilPodrobnosti?.avatar_url} size={40} />
                 <View>
                   <ThemedText type="bodyBold">
-                    {profilPodrobnosti?.display_name || profilPodrobnosti?.username || 'Tekač'}
+                    {profilPodrobnosti?.display_name || profilPodrobnosti?.username || 'Runner'}
                   </ThemedText>
                   <ThemedText type="caption" variant="muted">
                     {tek?.run_date
-                      ? new Date(tek.run_date).toLocaleDateString('sl-SI', {
+                      ? new Date(tek.run_date).toLocaleDateString('en-US', {
                           weekday: 'short', month: 'short', day: 'numeric',
                         })
                       : oblikujCasPred(podrobnostiObjave.created_at)}
-                    {tek?.run_time ? ` ob ${oblikujCasTeka(tek.run_time)}` : ''}
+                    {tek?.run_time ? ` at ${oblikujCasTeka(tek.run_time)}` : ''}
                   </ThemedText>
                 </View>
               </View>
@@ -392,7 +392,7 @@ export default function FeedScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Zemljevid poti */}
+            {/* Route map */}
             {imaPot && podatkiPoti && (
               <View style={styles.detailMapContainer}>
                 <WebView
@@ -407,35 +407,35 @@ export default function FeedScreen() {
               </View>
             )}
 
-            {/* Statistika teka */}
+            {/* Run stats */}
             {tek && (
               <View style={styles.detailStats}>
                 <StatBlock
                   stats={[
                     { value: Number(tek.distance_km || 0).toFixed(2), label: 'km' },
-                    { value: oblikujTrajanje(tek.duration ?? null), label: 'čas' },
-                    { value: tek.pace ?? '0:00', label: 'tempo/km' },
+                    { value: oblikujTrajanje(tek.duration ?? null), label: 'time' },
+                    { value: tek.pace ?? '0:00', label: 'pace/km' },
                   ]}
                 />
               </View>
             )}
 
-            {/* Opis */}
+            {/* Description */}
             {podrobnostiObjave.content ? (
               <View style={styles.detailDescription}>
                 <ThemedText type="body">{podrobnostiObjave.content}</ThemedText>
               </View>
             ) : null}
 
-            {/* Število všečkov in komentarjev */}
+            {/* Like and comment counts */}
             <View style={styles.detailFooter}>
               <View style={styles.detailFooterItem}>
                 <IconSymbol name="heart.fill" size={16} color={AuroraColors.primary} />
-                <ThemedText type="bodySmall" variant="muted">{podrobnostiObjave.likes_count ?? 0} všečkov</ThemedText>
+                <ThemedText type="bodySmall" variant="muted">{podrobnostiObjave.likes_count ?? 0} likes</ThemedText>
               </View>
               <View style={styles.detailFooterItem}>
                 <IconSymbol name="bubble.left" size={16} color={AuroraColors.textMuted} />
-                <ThemedText type="bodySmall" variant="muted">{podrobnostiObjave.comments_count ?? 0} komentarjev</ThemedText>
+                <ThemedText type="bodySmall" variant="muted">{podrobnostiObjave.comments_count ?? 0} comments</ThemedText>
               </View>
             </View>
           </ThemedView>
@@ -444,7 +444,7 @@ export default function FeedScreen() {
     );
   };
 
-  // ── Kartica objave ──
+  // ── Post card ──
   const izrisiObjavo = ({ item }: { item: PostWithAuthor }) => {
     if (!item) return null;
     const profil = item.profiles;
@@ -452,13 +452,13 @@ export default function FeedScreen() {
 
     return (
       <GlassCard style={styles.postCard}>
-        {/* Glava uporabnika */}
+        {/* User header */}
         <View style={styles.postHeader}>
           <TouchableOpacity style={styles.userInfo} onPress={() => obdelajPritiskUporabnika(item.user_id)} activeOpacity={0.7}>
             <Avatar uri={profil?.avatar_url} size={40} />
             <View style={styles.userDetails}>
               <ThemedText type="bodyBold">
-                {profil?.display_name || profil?.username || 'Neznano'}
+                {profil?.display_name || profil?.username || 'Unknown'}
               </ThemedText>
               <ThemedText type="caption" variant="muted">
                 {oblikujCasPred(item.created_at)}
@@ -467,47 +467,47 @@ export default function FeedScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Besedilo objave */}
+        {/* Post text */}
         {item.content && (
           <ThemedText type="body" style={styles.description}>
             {item.content}
           </ThemedText>
         )}
 
-        {/* Priložena slika (npr. izvožen mesečni pregled iz Analitike) */}
+        {/* Attached image (e.g. an exported monthly overview from Analytics) */}
         {item.image_url && (
           <View style={styles.postImageContainer}>
             <Image source={{ uri: item.image_url }} style={styles.postImage} contentFit="contain" />
           </View>
         )}
 
-        {/* Mini zemljevid poti (klikljiv za odprtje podrobnosti) */}
+        {/* Mini route map (tap to open details) */}
         {prikaziZemljevid && item.runs?.route_data && (
           <TouchableOpacity activeOpacity={0.9} onPress={() => setPodrobnostiObjave(item)}>
             {izrisiMiniZemljevid(item.runs.route_data as RouteData)}
             <View style={styles.mapOverlayLabel}>
               <IconSymbol name="map.fill" size={12} color={AuroraColors.onPrimary} />
               <ThemedText type="caption" lightColor={AuroraColors.onPrimary} darkColor={AuroraColors.onPrimary}>
-                Tapni za ogled poti
+                Tap to view route
               </ThemedText>
             </View>
           </TouchableOpacity>
         )}
 
-        {/* Povzetek statistike teka */}
+        {/* Run stats summary */}
         {item.runs && (
           <TouchableOpacity activeOpacity={0.8} onPress={() => setPodrobnostiObjave(item)} style={styles.runStats}>
             <StatBlock
               stats={[
                 { value: Number(item.runs.distance_km || 0).toFixed(2), label: 'km' },
-                { value: oblikujTrajanje(item.runs.duration ?? null), label: 'čas' },
-                { value: item.runs.pace ?? '0:00', label: 'tempo/km' },
+                { value: oblikujTrajanje(item.runs.duration ?? null), label: 'time' },
+                { value: item.runs.pace ?? '0:00', label: 'pace/km' },
               ]}
             />
           </TouchableOpacity>
         )}
 
-        {/* Gumbi za všeček in komentarje */}
+        {/* Like and comment buttons */}
         <View style={styles.postActions}>
           <TouchableOpacity style={styles.actionButton} onPress={() => obdelajVsecek(item)} activeOpacity={0.7}>
             <IconSymbol
@@ -532,12 +532,12 @@ export default function FeedScreen() {
           {item.runs && (
             <TouchableOpacity style={styles.actionButton} onPress={() => setPodrobnostiObjave(item)} activeOpacity={0.7}>
               <IconSymbol name="arrow.up.right.square" size={20} color={AuroraColors.textMuted} />
-              <ThemedText type="bodySmall" variant="muted">Podrobnosti</ThemedText>
+              <ThemedText type="bodySmall" variant="muted">Details</ThemedText>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* Sekcija komentarjev */}
+        {/* Comments section */}
         {razsirjenaObjavaId === item.id && (
           <View style={styles.commentsSection}>
             {komentarji[item.id] && komentarji[item.id].length > 0 && (
@@ -548,7 +548,7 @@ export default function FeedScreen() {
                       <Avatar uri={komentar.profiles?.avatar_url} size={28} />
                       <View style={styles.commentContent}>
                         <ThemedText type="bodySmall" variant="primary">
-                          {komentar.profiles?.display_name || komentar.profiles?.username || 'Neznano'}
+                          {komentar.profiles?.display_name || komentar.profiles?.username || 'Unknown'}
                         </ThemedText>
                         <ThemedText type="bodySmall" style={styles.commentText}>
                           {komentar.content}
@@ -563,13 +563,13 @@ export default function FeedScreen() {
               </View>
             )}
 
-            {/* Vnos komentarja */}
+            {/* Comment input */}
             <View style={styles.commentInputRow}>
               <View style={styles.commentInputWrap}>
                 <Input
                   value={besediloKomentarja[item.id] || ''}
                   onChangeText={(besedilo) => setBesediloKomentarja((prej) => ({ ...prej, [item.id]: besedilo }))}
-                  placeholder="Dodaj komentar..."
+                  placeholder="Add a comment..."
                   multiline
                   editable={!posiljamKomentar}
                   style={styles.commentInput}
@@ -593,7 +593,7 @@ export default function FeedScreen() {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ThemedText type="body" variant="secondary">Nalaganje...</ThemedText>
+          <ThemedText type="body" variant="secondary">Loading...</ThemedText>
         </View>
       </ThemedView>
     );
@@ -606,13 +606,13 @@ export default function FeedScreen() {
       {napakaFeeda ? (
         <EmptyState
           icon="exclamationmark.triangle.fill"
-          title="Feeda ni mogoče naložiti"
+          title="Couldn't load feed"
           subtitle={napakaFeeda}
-          ctaLabel="Poskusi znova"
+          ctaLabel="Try again"
           onPressCta={osveziPodatke}
         />
       ) : objave.length === 0 ? (
-        <EmptyState icon="newspaper.fill" title="Še ni objav" subtitle="Zaključite tek in ga objavite, da se prikaže tukaj!" />
+        <EmptyState icon="newspaper.fill" title="No posts yet" subtitle="Finish a run and post it to see it here!" />
       ) : (
         <FlatList
           data={objave}
@@ -631,7 +631,7 @@ export default function FeedScreen() {
           <ThemedView style={styles.composerModal}>
             <View style={styles.sheetHandle} />
             <View style={styles.detailHeader}>
-              <ThemedText type="h3">Nova objava</ThemedText>
+              <ThemedText type="h3">New post</ThemedText>
               <TouchableOpacity onPress={() => setPrikaziUrejevalnik(false)} style={styles.closeButton} hitSlop={8}>
                 <IconSymbol name="xmark" size={22} color={AuroraColors.text} />
               </TouchableOpacity>
@@ -640,7 +640,7 @@ export default function FeedScreen() {
               <Input
                 value={besediloNoveObjave}
                 onChangeText={setBesediloNoveObjave}
-                placeholder="Kaj imate novega?"
+                placeholder="What's new?"
                 multiline
                 maxLength={280}
                 autoFocus
@@ -650,7 +650,7 @@ export default function FeedScreen() {
                 {besediloNoveObjave.length}/280
               </ThemedText>
               <Button
-                label={objavljanje ? 'Objavljanje...' : 'Objavi'}
+                label={objavljanje ? 'Posting...' : 'Post'}
                 onPress={objaviNaFeed}
                 disabled={!besediloNoveObjave.trim() || objavljanje}
                 loading={objavljanje}

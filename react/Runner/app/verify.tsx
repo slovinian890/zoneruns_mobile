@@ -15,7 +15,7 @@ export default function ForgotPasswordScreen() {
   const [nalaganje, setNalaganje] = useState(false);
   const [epostaPoslana, setEpostaPoslana] = useState(false);
   
-  // Animacija dihanja za ikono
+  // Breathing animation for the icon
   const dihalniPulz = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -42,12 +42,12 @@ export default function ForgotPasswordScreen() {
 
   const ponastaviGeslo = async () => {
     if (!eposta.trim()) {
-      Alert.alert('Napaka', 'Prosimo, vnesite vaš e-poštni naslov');
+      Alert.alert('Error', 'Please enter your email address');
       return;
     }
 
     if (!preveriEposto(eposta)) {
-      Alert.alert('Napaka', 'Prosimo, vnesite veljaven e-poštni naslov');
+      Alert.alert('Error', 'Please enter a valid email address');
       return;
     }
 
@@ -58,7 +58,7 @@ export default function ForgotPasswordScreen() {
     if (rezultat.success) {
       setEpostaPoslana(true);
     } else {
-      Alert.alert('Napaka', rezultat.error || 'Pošiljanje e-pošte za ponastavitev ni uspelo. Poskusite znova.');
+      Alert.alert('Error', rezultat.error || 'Failed to send reset email. Please try again.');
     }
   };
 
@@ -89,15 +89,15 @@ export default function ForgotPasswordScreen() {
               </View>
             </View>
             
-            <ThemedText type="h2" style={styles.title}>Preverite e-pošto</ThemedText>
+            <ThemedText type="h2" style={styles.title}>Check your email</ThemedText>
             <ThemedText type="body" variant="secondary" style={styles.subtitle}>
-              Poslali smo povezavo za ponastavitev gesla na
+              We've sent a password reset link to
             </ThemedText>
             <ThemedText type="bodyBold" style={[styles.email, { color: barve.primary }]}>
               {eposta}
             </ThemedText>
             <ThemedText type="body" variant="muted" style={styles.instructions}>
-              Kliknite povezavo v e-pošti za ponastavitev gesla. Če je ne vidite, preverite mapo z neželeno pošto.
+              Click the link in the email to reset your password. If you don't see it, check your spam folder.
             </ThemedText>
           </View>
 
@@ -107,7 +107,7 @@ export default function ForgotPasswordScreen() {
               onPress={() => router.replace('/signin')}
               activeOpacity={0.7}>
               <ThemedText type="bodyBold" lightColor={AuroraColors.onPrimary} darkColor={AuroraColors.onPrimary}>
-                Nazaj na prijavo
+                Back to sign in
               </ThemedText>
             </TouchableOpacity>
 
@@ -119,7 +119,7 @@ export default function ForgotPasswordScreen() {
               }}
               activeOpacity={0.7}>
               <ThemedText type="bodyBold" variant="secondary">
-                Poskusi drug e-poštni naslov
+                Try a different email address
               </ThemedText>
             </TouchableOpacity>
           </View>
@@ -157,18 +157,18 @@ export default function ForgotPasswordScreen() {
               </View>
             </View>
             
-            <ThemedText type="h2" style={styles.title}>Ponastavitev gesla</ThemedText>
+            <ThemedText type="h2" style={styles.title}>Reset password</ThemedText>
             <ThemedText type="body" variant="secondary" style={styles.subtitle}>
-              Vnesite e-poštni naslov in poslali vam bomo povezavo za ponastavitev gesla
+              Enter your email address and we'll send you a password reset link
             </ThemedText>
           </View>
 
           <View style={styles.form}>
             <View style={styles.inputContainer}>
-              <ThemedText type="bodyBold" style={styles.label}>E-poštni naslov</ThemedText>
+              <ThemedText type="bodyBold" style={styles.label}>Email address</ThemedText>
               <View style={[
-                styles.inputWrapper, 
-                { 
+                styles.inputWrapper,
+                {
                   borderColor: barve.border,
                   backgroundColor: barvnaShema === 'dark' ? barve.card : barve.background,
                 }
@@ -178,7 +178,7 @@ export default function ForgotPasswordScreen() {
                   style={[styles.input, { color: barve.text }]}
                   value={eposta}
                   onChangeText={setEposta}
-                  placeholder="vas@email.com"
+                  placeholder="you@email.com"
                   placeholderTextColor={barve.textMuted}
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -199,7 +199,7 @@ export default function ForgotPasswordScreen() {
               disabled={nalaganje}
               activeOpacity={0.7}>
               <ThemedText type="bodyBold" lightColor={AuroraColors.onPrimary} darkColor={AuroraColors.onPrimary}>
-                {nalaganje ? 'Pošiljanje...' : 'Pošlji povezavo za ponastavitev'}
+                {nalaganje ? 'Sending...' : 'Send reset link'}
               </ThemedText>
             </TouchableOpacity>
 
@@ -208,9 +208,9 @@ export default function ForgotPasswordScreen() {
               onPress={() => router.back()}
               activeOpacity={0.7}>
               <ThemedText type="body" variant="secondary">
-                Se spomnite gesla?{' '}
+                Remember your password?{' '}
                 <ThemedText type="bodyBold" style={{ color: barve.primary }}>
-                  Prijava
+                  Sign in
                 </ThemedText>
               </ThemedText>
             </TouchableOpacity>

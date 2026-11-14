@@ -18,7 +18,7 @@ import {
   getCurrentUserStats,
   getAchievementProgress,
 } from '@/services/statsService';
-import { getMyCoinHistory } from '@/services/coinsService';
+import { getMyCoinHistory, labelForCoinTransaction } from '@/services/coinsService';
 import { Achievement, CoinTransaction, UserStats } from '@/services/supabase';
 
 const FEATURED_CATEGORY = 'Runner Rank';
@@ -70,7 +70,7 @@ export default function BadgesScreen() {
 
       setVrstice(sestavljeneVrstice);
     } catch (napaka) {
-      console.error('Napaka pri nalaganju dosežkov:', napaka);
+      console.error('Error loading achievements:', napaka);
     } finally {
       setNalaganje(false);
       setOsvezevanje(false);
@@ -110,10 +110,10 @@ export default function BadgesScreen() {
   const prikaziPodrobnosti = (vrstica: Row) => {
     const { achievement, earnedAt, progressPct } = vrstica;
     if (earnedAt) {
-      Alert.alert(achievement.title, `${achievement.description}\n\nOdklenjeno ${new Date(earnedAt).toLocaleDateString('sl-SI')}`);
+      Alert.alert(achievement.title, `${achievement.description}\n\nUnlocked ${new Date(earnedAt).toLocaleDateString('en-US')}`);
     } else {
       const napredek = achievement.requirement_type && achievement.requirement_value
-        ? `\n\nNapredek: ${Math.round(progressPct * 100)}%`
+        ? `\n\nProgress: ${Math.round(progressPct * 100)}%`
         : '';
       Alert.alert(`🔒 ${achievement.title}`, `${achievement.description}${napredek}`);
     }
@@ -122,15 +122,15 @@ export default function BadgesScreen() {
   return (
     <ThemedView style={styles.container}>
       <ScreenHeader
-        title="Dosežki"
-        subtitle={vrstice.length > 0 ? `${stevilOdklenjenih}/${vrstice.length} odklenjenih` : undefined}
+        title="Achievements"
+        subtitle={vrstice.length > 0 ? `${stevilOdklenjenih}/${vrstice.length} unlocked` : undefined}
         onBack={() => usmerjevalnik.back()}
         actions={[{ icon: 'chart.line.uptrend.xyaxis', onPress: () => usmerjevalnik.push('/leaderboard') }]}
       />
 
       {nalaganje ? (
         <View style={styles.loadingContainer}>
-          <ThemedText type="body" variant="secondary">Nalaganje...</ThemedText>
+          <ThemedText type="body" variant="secondary">Loading...</ThemedText>
         </View>
       ) : (
         <ScrollView
@@ -142,7 +142,7 @@ export default function BadgesScreen() {
               <IconSymbol name="coins.fill" size={26} color={AuroraColors.accentAmber} />
               <View style={{ flex: 1 }}>
                 <ThemedText type="h2" variant="primary">{statistika?.coins ?? 0}</ThemedText>
-                <ThemedText type="bodySmall" variant="muted">Kovanci</ThemedText>
+                <ThemedText type="bodySmall" variant="muted">Coins</ThemedText>
               </View>
             </View>
             {zgodovinaKovancev.length > 0 && (
@@ -150,11 +150,13 @@ export default function BadgesScreen() {
                 {zgodovinaKovancev.slice(0, 3).map((tx) => (
                   <View key={tx.id} style={styles.coinHistoryRow}>
                     <ThemedText type="bodySmall" variant="muted">
-                      {new Date(tx.created_at).toLocaleDateString('sl-SI')} ·{' '}
-                      {tx.run_id ? `${tx.distance_km.toFixed(1)} km tek` : 'dnevna nagrada'}
+                      {new Date(tx.created_at).toLocaleDateString('en-US')} · {labelForCoinTransaction(tx)}
                     </ThemedText>
-                    <ThemedText type="bodySmall" lightColor={AuroraColors.accentAmber} darkColor={AuroraColors.accentAmber}>
-                      +{tx.amount}
+                    <ThemedText
+                      type="bodySmall"
+                      lightColor={tx.amount >= 0 ? AuroraColors.accentAmber : AuroraColors.danger}
+                      darkColor={tx.amount >= 0 ? AuroraColors.accentAmber : AuroraColors.danger}>
+                      {tx.amount >= 0 ? `+${tx.amount}` : tx.amount}
                     </ThemedText>
                   </View>
                 ))}

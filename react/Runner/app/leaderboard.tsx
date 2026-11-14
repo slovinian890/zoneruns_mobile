@@ -81,7 +81,7 @@ export default function LeaderboardScreen() {
       setSkupineTeden(st);
       setMojeSkupineId(new Set((mojeSkupine.groups ?? []).map((g) => g.id)));
     } catch (napaka) {
-      console.error('Napaka pri nalaganju lestvice:', napaka);
+      console.error('Error loading leaderboard:', napaka);
     } finally {
       setNalaganje(false);
       setOsvezevanje(false);
@@ -140,7 +140,7 @@ export default function LeaderboardScreen() {
         <View style={[styles.colorDot, { backgroundColor: item.color }]} />
         <View style={{ flex: 1 }}>
           <ThemedText type="bodyBold" numberOfLines={1}>{item.name}</ThemedText>
-          <ThemedText type="caption" variant="muted">{item.member_count} članov</ThemedText>
+          <ThemedText type="caption" variant="muted">{item.member_count} members</ThemedText>
         </View>
         <ThemedText
           type="bodyBold"
@@ -154,19 +154,19 @@ export default function LeaderboardScreen() {
 
   const praznoSporocilo = () => {
     if (obseg === 'teden') {
-      return vrsta === 'posamezniki' ? 'Še nihče ni zasegel ozemlja ta teden' : 'Še nobena skupina ni aktivna ta teden';
+      return vrsta === 'posamezniki' ? 'No one has captured territory this week yet' : 'No group is active this week yet';
     }
-    return vrsta === 'posamezniki' ? 'Še nihče ni zasegel ozemlja' : 'Ni še nobene javne skupine';
+    return vrsta === 'posamezniki' ? 'No one has captured territory yet' : 'No public groups yet';
   };
 
   return (
     <ThemedView style={styles.container}>
-      <ScreenHeader title="Lestvica" onBack={() => usmerjevalnik.back()}>
+      <ScreenHeader title="Leaderboard" onBack={() => usmerjevalnik.back()}>
         <View style={styles.segmentedWrap}>
           <SegmentedControl
             segments={[
-              { key: 'posamezniki', label: 'Posamezniki' },
-              { key: 'skupine', label: 'Skupine' },
+              { key: 'posamezniki', label: 'Individuals' },
+              { key: 'skupine', label: 'Groups' },
             ]}
             value={vrsta}
             onChange={(k) => setVrsta(k as Vrsta)}
@@ -175,8 +175,8 @@ export default function LeaderboardScreen() {
         <View style={styles.segmentedWrapSmall}>
           <SegmentedControl
             segments={[
-              { key: 'vsi', label: 'Ves čas' },
-              { key: 'teden', label: 'Ta teden' },
+              { key: 'vsi', label: 'All time' },
+              { key: 'teden', label: 'This week' },
             ]}
             value={obseg}
             onChange={(k) => setObseg(k as Obseg)}
@@ -186,13 +186,13 @@ export default function LeaderboardScreen() {
 
       {nalaganje ? (
         <View style={styles.loadingContainer}>
-          <ThemedText type="body" variant="secondary">Nalaganje...</ThemedText>
+          <ThemedText type="body" variant="secondary">Loading...</ThemedText>
         </View>
       ) : podatki.length === 0 ? (
         <EmptyState
           icon={vrsta === 'posamezniki' ? 'hexagon.fill' : 'person.2.fill'}
           title={praznoSporocilo()}
-          subtitle={obseg === 'teden' ? 'Pojdite tekat in zasezite ozemlje, da se uvrstite!' : undefined}
+          subtitle={obseg === 'teden' ? 'Go for a run and capture territory to make the board!' : undefined}
         />
       ) : (
         <FlatList

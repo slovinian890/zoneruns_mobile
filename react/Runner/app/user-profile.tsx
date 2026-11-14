@@ -32,7 +32,7 @@ export default function UserProfileScreen() {
     }
   }, [uporabnikId]);
 
-  // Naloži vse podatke profila vzporedno – profil, statistiko, stanje sledenja in števce
+  // Load all profile data in parallel – profile, stats, follow state, and counts
   const naloziPodatkeProfila = async () => {
     if (!uporabnikId) return;
     
@@ -58,8 +58,8 @@ export default function UserProfileScreen() {
       setSteviloSledilcev(stSledilcev);
       setSteviloSledim(stSledim);
     } catch (napaka) {
-      console.error('Napaka pri nalaganju profila:', napaka);
-      Alert.alert('Napaka', 'Nalaganje profila ni uspelo');
+      console.error('Error loading profile:', napaka);
+      Alert.alert('Error', 'Failed to load profile');
     } finally {
       setNalaganje(false);
     }
@@ -76,7 +76,7 @@ export default function UserProfileScreen() {
       setSledinUporabniku(!sledinUporabniku);
       setSteviloSledilcev(prej => sledinUporabniku ? prej - 1 : prej + 1);
     } else {
-      Alert.alert('Napaka', rezultat.error || 'Posodobitev stanja sledenja ni uspela');
+      Alert.alert('Error', rezultat.error || 'Failed to update follow status');
     }
   };
 
@@ -84,7 +84,7 @@ export default function UserProfileScreen() {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ThemedText type="body" variant="secondary">Nalaganje...</ThemedText>
+          <ThemedText type="body" variant="secondary">Loading...</ThemedText>
         </View>
       </ThemedView>
     );
@@ -94,13 +94,13 @@ export default function UserProfileScreen() {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.errorContainer}>
-          <ThemedText type="body" variant="secondary">Profil ni najden</ThemedText>
+          <ThemedText type="body" variant="secondary">Profile not found</ThemedText>
           <TouchableOpacity
             style={[styles.backButton, { backgroundColor: barve.primary }]}
             onPress={() => usmerjevalnik.back()}
             activeOpacity={0.7}>
             <ThemedText type="bodyBold" lightColor={AuroraColors.onPrimary} darkColor={AuroraColors.onPrimary}>
-              Nazaj
+              Back
             </ThemedText>
           </TouchableOpacity>
         </View>
@@ -118,13 +118,13 @@ export default function UserProfileScreen() {
         <TouchableOpacity onPress={() => usmerjevalnik.back()} style={styles.backButtonIcon}>
           <IconSymbol name="chevron.left" size={24} color={barve.text} />
         </TouchableOpacity>
-        <ThemedText type="h3">Profil</ThemedText>
+        <ThemedText type="h3">Profile</ThemedText>
         <View style={{ width: 24 }} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.profileSection}>
-          {/* Profilna slika */}
+          {/* Profile picture */}
           <View style={styles.imageContainer}>
             {profil.avatar_url ? (
               <Image source={{ uri: profil.avatar_url }} style={styles.profileImage} />
@@ -135,7 +135,7 @@ export default function UserProfileScreen() {
             )}
           </View>
 
-          {/* Podatki uporabnika */}
+          {/* User info */}
           <ThemedText type="h2" style={styles.displayName}>
             {profil.display_name || profil.username}
           </ThemedText>
@@ -143,7 +143,7 @@ export default function UserProfileScreen() {
             @{profil.username}
           </ThemedText>
 
-          {/* Lokacija */}
+          {/* Location */}
           {profil.location && (
             <View style={styles.locationContainer}>
               <IconSymbol name="location.fill" size={16} color={barve.icon} />
@@ -153,27 +153,27 @@ export default function UserProfileScreen() {
             </View>
           )}
 
-          {/* Opis */}
+          {/* Bio */}
           {profil.bio && (
             <ThemedText type="body" style={styles.bio}>
               {profil.bio}
             </ThemedText>
           )}
 
-          {/* Statistika sledenja */}
+          {/* Follow stats */}
           <View style={styles.followStats}>
             <View style={styles.followStatItem}>
               <ThemedText type="h3" variant="primary">{steviloSledim}</ThemedText>
-              <ThemedText type="bodySmall" variant="muted">Sledim</ThemedText>
+              <ThemedText type="bodySmall" variant="muted">Following</ThemedText>
             </View>
             <View style={[styles.statDivider, { backgroundColor: barve.border }]} />
             <View style={styles.followStatItem}>
               <ThemedText type="h3" variant="primary">{steviloSledilcev}</ThemedText>
-              <ThemedText type="bodySmall" variant="muted">Sledilcev</ThemedText>
+              <ThemedText type="bodySmall" variant="muted">Followers</ThemedText>
             </View>
           </View>
 
-          {/* Gumbi za sledenje in sporočilo */}
+          {/* Follow and message buttons */}
           <View style={styles.actionRow}>
             <TouchableOpacity
               style={[
@@ -192,7 +192,7 @@ export default function UserProfileScreen() {
                 type="bodyBold"
                 lightColor={sledinUporabniku ? barve.text : AuroraColors.onPrimary}
                 darkColor={sledinUporabniku ? barve.text : AuroraColors.onPrimary}>
-                {nalaganjeDejanja ? 'Nalaganje...' : sledinUporabniku ? 'Sledim' : 'Sledi'}
+                {nalaganjeDejanja ? 'Loading...' : sledinUporabniku ? 'Following' : 'Follow'}
               </ThemedText>
             </TouchableOpacity>
 
@@ -208,43 +208,43 @@ export default function UserProfileScreen() {
           </View>
         </View>
 
-        {/* Sekcija statistike */}
+        {/* Stats section */}
         <View style={styles.statsSection}>
-          <ThemedText type="h3" style={styles.sectionTitle}>Statistika</ThemedText>
+          <ThemedText type="h3" style={styles.sectionTitle}>Stats</ThemedText>
           <View style={styles.statsGrid}>
-            <View style={[styles.statCard, { 
+            <View style={[styles.statCard, {
               backgroundColor: barvnaShema === 'dark' ? barve.card : barve.backgroundSecondary,
               borderWidth: 1,
               borderColor: barve.border,
             }]}>
               <ThemedText type="h2" variant="primary">{statistika?.total_runs ?? 0}</ThemedText>
-              <ThemedText type="bodySmall" variant="muted">Skupaj tekov</ThemedText>
+              <ThemedText type="bodySmall" variant="muted">Total runs</ThemedText>
             </View>
-            <View style={[styles.statCard, { 
+            <View style={[styles.statCard, {
               backgroundColor: barvnaShema === 'dark' ? barve.card : barve.backgroundSecondary,
               borderWidth: 1,
               borderColor: barve.border,
             }]}>
               <ThemedText type="h2" variant="primary">{statistika?.total_distance_km?.toFixed(1) ?? '0.0'}</ThemedText>
-              <ThemedText type="bodySmall" variant="muted">Skupna razdalja (km)</ThemedText>
+              <ThemedText type="bodySmall" variant="muted">Total distance (km)</ThemedText>
             </View>
           </View>
           <View style={styles.statsGrid}>
-            <View style={[styles.statCard, { 
+            <View style={[styles.statCard, {
               backgroundColor: barvnaShema === 'dark' ? barve.card : barve.backgroundSecondary,
               borderWidth: 1,
               borderColor: barve.border,
             }]}>
               <ThemedText type="h2" variant="primary">{statistika?.current_streak ?? 0}</ThemedText>
-              <ThemedText type="bodySmall" variant="muted">Trenutni niz</ThemedText>
+              <ThemedText type="bodySmall" variant="muted">Current streak</ThemedText>
             </View>
-            <View style={[styles.statCard, { 
+            <View style={[styles.statCard, {
               backgroundColor: barvnaShema === 'dark' ? barve.card : barve.backgroundSecondary,
               borderWidth: 1,
               borderColor: barve.border,
             }]}>
               <ThemedText type="h2" variant="primary">{statistika?.best_pace ?? '--'}</ThemedText>
-              <ThemedText type="bodySmall" variant="muted">Najboljši tempo</ThemedText>
+              <ThemedText type="bodySmall" variant="muted">Best pace</ThemedText>
             </View>
           </View>
         </View>

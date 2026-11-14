@@ -77,6 +77,7 @@ const ICON_MAPPING: Record<string, IconConfig> = {
   'clock.fill': { library: 'fa', name: 'clock-o' },
   'coins.fill': { library: 'fa5', name: 'coins' },
   'crown.fill': { library: 'fa5', name: 'crown' },
+  'bounty.fill': { library: 'fa5', name: 'crosshairs' },
   
   // Map & Location
   'location.fill': { library: 'fa', name: 'map-marker' },

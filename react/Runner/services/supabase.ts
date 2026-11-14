@@ -48,6 +48,9 @@ export interface Profile {
   location: string | null;
   trail_color: string | null;
   active_hero_id: string | null;
+  // Which clan (if any) your runs currently claim/heal hexes for — see
+  // set_active_group / migrations/017_clan_hex_warfare.sql.
+  active_group_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -118,6 +121,10 @@ export interface UserStats {
   coins: number;
   created_at: string;
   updated_at: string;
+  last_login_date?: string | null;
+  login_streak?: number;
+  /** Last calendar date a Ghost Run actually applied (suppressed victim notifications) — see claim_territory_from_run. Null/not today = Ghost Run is available. */
+  last_ghost_run_date?: string | null;
 }
 
 export type PostType = 'social' | 'run' | 'achievement' | 'photo';
@@ -255,10 +262,91 @@ export interface ClaimTerritoryResult {
   gap_m?: number;
   area_m2?: number;
   claimed_area_m2?: number;
-  /** Enemy hexes hit hard enough to knock down a defense level, but not enough to flip — see migration 012. */
+  /** Enemy hexes hit hard enough to knock down a defense level, but not enough to finish — see migration 012. */
   weakened_count?: number;
+  /** Enemy hexes that were already at level 1 and just got finished — they go neutral, not to you. See migration 016. */
+  neutralized_count?: number;
+  /** Coins paid out this run from bounties on hexes just neutralized above. */
+  bounty_earned?: number;
   total_area_m2?: number;
   stolen?: Array<{ user_id: string; area_m2: number; zones_lost: number }>;
+  /**
+   * Whether Ghost Run actually suppressed victim notifications for this
+   * claim. Can be false even when the run was *saved* with is_ghost=true —
+   * Ghost Run only works once a day (see migrations/019_ghost_run_daily_limit.sql);
+   * if already used today, this claim proceeds normally and victims are notified.
+   */
+  ghost_active?: boolean;
+  /** True when this claim ran 21:00–06:00 local and gained at least one brand-new hex — those start at level 3 instead of the usual 2. See migration 020. */
+  night_bonus?: boolean;
+}
+
+// ============================================
+// HEX GRID / FORTIFY / BOUNTY
+// ============================================
+
+/** One hex cell from get_hexes_in_bounds — the full grid (claimed + neutral) in a map viewport. */
+export interface HexCell {
+  hexCol: number;
+  hexRow: number;
+  userId: string | null;
+  username: string | null;
+  trailColor: string | null;
+  /** Current defense level (1..maxLevel). Null when the hex is neutral/unclaimed. */
+  level: number | null;
+  /** Fortified ceiling, 2..5 — what the hex heals back up to when its owner runs over it. */
+  maxLevel: number | null;
+  /** Sum of every active bounty on this hex, from any placer. */
+  bountyTotal: number;
+  /** Sum of the current user's own active bounty on this hex (0 if none). */
+  myBounty: number;
+  /** Clan that owns this hex, if any — null means it's personally owned (or unclaimed). See migrations/017_clan_hex_warfare.sql. */
+  ownerGroupId: string | null;
+  groupName: string | null;
+  groupColor: string | null;
+  geojson: TerritoryGeoJSON;
+}
+
+/** Result of the fortify_hex RPC. */
+export interface FortifyHexResult {
+  success: boolean;
+  reason?: 'not_authenticated' | 'not_claimed' | 'not_owner' | 'max_level' | 'insufficient_coins';
+  new_level?: number;
+  cost?: number;
+  coins?: number;
+}
+
+/** Result of the place_bounty RPC. */
+export interface PlaceBountyResult {
+  success: boolean;
+  reason?: 'not_authenticated' | 'invalid_hex_count' | 'amount_too_small' | 'invalid_target' | 'insufficient_coins';
+  per_hex_amount?: number;
+  total_charged?: number;
+  hex_count?: number;
+  min_amount?: number;
+  cost?: number;
+  coins?: number;
+}
+
+/** Result of the cancel_my_bounty RPC. */
+export interface CancelBountyResult {
+  success: boolean;
+  reason?: 'not_authenticated' | 'no_bounty';
+  refunded?: number;
+}
+
+/** Result of the set_active_group RPC. */
+export interface SetActiveGroupResult {
+  success: boolean;
+  reason?: 'not_authenticated' | 'not_member';
+  group_id?: string | null;
+}
+
+/** The caller's own active clan, from get_my_active_group — null if running solo. */
+export interface MyActiveGroup {
+  group_id: string;
+  name: string;
+  color: string;
 }
 
 // ============================================
@@ -291,14 +379,15 @@ export interface HeroActionResult {
 // COINS
 // ============================================
 
-/** One row from coin_transactions — a single run's coin payout, or a daily
- * login bonus when run_id is null. */
+/** One row from coin_transactions — a run reward, daily login bonus, hex
+ * fortify spend, or bounty place/payout/refund. */
 export interface CoinTransaction {
   id: string;
   user_id: string;
   run_id: string | null;
   amount: number;
   distance_km: number;
+  kind: 'run' | 'login' | 'fortify' | 'bounty_place' | 'bounty_payout' | 'bounty_refund';
   created_at: string;
 }
 

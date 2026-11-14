@@ -13,7 +13,16 @@
  * summed per group (see supabase/migrations/006_groups.sql).
  */
 
-import { supabase, Group, GroupWithRole, GroupMemberStat, GroupLeaderboardEntry, GroupTerritoryFeature } from './supabase';
+import {
+  supabase,
+  Group,
+  GroupWithRole,
+  GroupMemberStat,
+  GroupLeaderboardEntry,
+  GroupTerritoryFeature,
+  SetActiveGroupResult,
+  MyActiveGroup,
+} from './supabase';
 import { getCurrentUser } from './authService';
 
 export const GROUP_MEMBER_LIMIT = 30;
@@ -243,6 +252,44 @@ export const getGroupLeaderboard = async (limit: number = 20): Promise<GroupLead
   } catch (e) {
     console.warn('getGroupLeaderboard exception:', e);
     return [];
+  }
+};
+
+/**
+ * Which clan (if any) the current user's runs claim/heal hexes for right
+ * now — null if they're running solo. See migrations/017_clan_hex_warfare.sql.
+ */
+export const getMyActiveGroup = async (): Promise<MyActiveGroup | null> => {
+  try {
+    const { data, error } = await supabase.rpc('get_my_active_group');
+    if (error) {
+      console.warn('getMyActiveGroup error:', error.message);
+      return null;
+    }
+    const row = (data ?? [])[0];
+    return row ? { group_id: row.group_id, name: row.name, color: row.color } : null;
+  } catch (e) {
+    console.warn('getMyActiveGroup exception:', e);
+    return null;
+  }
+};
+
+/**
+ * Switch which clan your future runs represent for hex combat — pass null
+ * to go back to running for yourself. Server validates membership either
+ * way, so this can't be set to a group you're not actually in.
+ */
+export const setActiveGroup = async (groupId: string | null): Promise<SetActiveGroupResult> => {
+  try {
+    const { data, error } = await supabase.rpc('set_active_group', { p_group_id: groupId });
+    if (error) {
+      console.warn('setActiveGroup error:', error.message);
+      return { success: false };
+    }
+    return (data as SetActiveGroupResult) ?? { success: false };
+  } catch (e) {
+    console.warn('setActiveGroup exception:', e);
+    return { success: false };
   }
 };
 

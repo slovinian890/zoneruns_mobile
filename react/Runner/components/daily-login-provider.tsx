@@ -98,7 +98,7 @@ function DailyLoginBanner({ reward, onDismiss }: { reward: Reward; onDismiss: ()
               +{reward.coins} {besedaZaKovance(reward.coins)}
             </ThemedText>
             <ThemedText type="bodySmall" variant="secondary">
-              Dnevna nagrada · {reward.streak}. dan zapored
+              Daily reward · {reward.streak}-day streak
             </ThemedText>
           </View>
         </View>

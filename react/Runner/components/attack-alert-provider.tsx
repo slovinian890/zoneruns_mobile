@@ -149,7 +149,7 @@ function AttackBanner({
           </View>
           <View style={styles.textCol}>
             <ThemedText type="bodyBold" style={{ color: AuroraColors.danger }}>
-              Pod napadom!
+              Under attack!
             </ThemedText>
             <ThemedText type="bodySmall" variant="secondary">
               {formatAttackMessage(notification)}

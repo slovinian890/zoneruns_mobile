@@ -18,9 +18,6 @@
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select profile pictures.",
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": ["location", "audio"]
-      },
-      "config": {
-        "googleMapsApiKey": "AIzaSyDummyKeyForDevelopment"
       }
     },
     "android": {
@@ -49,11 +46,6 @@
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ],
-      "config": {
-        "googleMaps": {
-          "apiKey": "AIzaSyDummyKeyForDevelopment"
-        }
-      },
       "package": "com.anonymous.Runner"
     },
     "web": {

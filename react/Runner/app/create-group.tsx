@@ -22,7 +22,7 @@ export default function CreateGroupScreen() {
 
   const obdelajUstvarjanje = async () => {
     if (!ime.trim()) {
-      Alert.alert('Manjka ime', 'Vnesite ime skupine');
+      Alert.alert('Missing Name', 'Enter a group name');
       return;
     }
 
@@ -33,7 +33,7 @@ export default function CreateGroupScreen() {
     if (rezultat.success && rezultat.group) {
       usmerjevalnik.replace({ pathname: '/group-detail', params: { groupId: rezultat.group.id } });
     } else {
-      Alert.alert('Napaka', rezultat.error || 'Ustvarjanje skupine ni uspelo');
+      Alert.alert('Error', rezultat.error || 'Could not create the group');
     }
   };
 
@@ -43,33 +43,33 @@ export default function CreateGroupScreen() {
         <TouchableOpacity onPress={() => usmerjevalnik.back()} style={styles.backButtonIcon}>
           <IconSymbol name="chevron.left" size={24} color={barve.text} />
         </TouchableOpacity>
-        <ThemedText type="h3">Nova skupina</ThemedText>
+        <ThemedText type="h3">New Group</ThemedText>
         <View style={{ width: 24 }} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <ThemedText type="bodyBold" style={styles.label}>Ime skupine</ThemedText>
+        <ThemedText type="bodyBold" style={styles.label}>Group name</ThemedText>
         <TextInput
           style={[styles.input, { backgroundColor: barvnaShema === 'dark' ? barve.card : barve.background, borderColor: barve.border, color: barve.text }]}
           value={ime}
           onChangeText={setIme}
-          placeholder="npr. Jutranji tekači"
+          placeholder="e.g. Morning Runners"
           placeholderTextColor={barve.textMuted}
           maxLength={50}
         />
 
-        <ThemedText type="bodyBold" style={styles.label}>Opis (neobvezno)</ThemedText>
+        <ThemedText type="bodyBold" style={styles.label}>Description (optional)</ThemedText>
         <TextInput
           style={[styles.input, styles.textArea, { backgroundColor: barvnaShema === 'dark' ? barve.card : barve.background, borderColor: barve.border, color: barve.text }]}
           value={opis}
           onChangeText={setOpis}
-          placeholder="O čem je ta skupina?"
+          placeholder="What's this group about?"
           placeholderTextColor={barve.textMuted}
           multiline
           maxLength={200}
         />
 
-        <ThemedText type="bodyBold" style={styles.label}>Barva skupine</ThemedText>
+        <ThemedText type="bodyBold" style={styles.label}>Group color</ThemedText>
         <View style={styles.colorGrid}>
           {TRAIL_COLORS.map((bs) => (
             <TouchableOpacity
@@ -90,7 +90,7 @@ export default function CreateGroupScreen() {
           ))}
         </View>
 
-        <ThemedText type="bodyBold" style={styles.label}>Zasebnost</ThemedText>
+        <ThemedText type="bodyBold" style={styles.label}>Privacy</ThemedText>
         <View style={styles.visibilityRow}>
           <TouchableOpacity
             style={[
@@ -101,10 +101,10 @@ export default function CreateGroupScreen() {
             activeOpacity={0.7}>
             <IconSymbol name="magnifyingglass" size={16} color={javna ? AuroraColors.onPrimary : barve.text} />
             <ThemedText type="bodyBold" lightColor={javna ? AuroraColors.onPrimary : barve.text} darkColor={javna ? AuroraColors.onPrimary : barve.text}>
-              Javna
+              Public
             </ThemedText>
             <ThemedText type="caption" lightColor={javna ? AuroraColors.onPrimary : barve.textMuted} darkColor={javna ? AuroraColors.onPrimary : barve.textMuted} style={{ textAlign: 'center' }}>
-              Vsak jo lahko najde in se pridruži
+              Anyone can find and join it
             </ThemedText>
           </TouchableOpacity>
           <TouchableOpacity
@@ -116,10 +116,10 @@ export default function CreateGroupScreen() {
             activeOpacity={0.7}>
             <IconSymbol name="lock.fill" size={16} color={!javna ? AuroraColors.onPrimary : barve.text} />
             <ThemedText type="bodyBold" lightColor={!javna ? AuroraColors.onPrimary : barve.text} darkColor={!javna ? AuroraColors.onPrimary : barve.text}>
-              Zasebna
+              Private
             </ThemedText>
             <ThemedText type="caption" lightColor={!javna ? AuroraColors.onPrimary : barve.textMuted} darkColor={!javna ? AuroraColors.onPrimary : barve.textMuted} style={{ textAlign: 'center' }}>
-              Pridružitev samo s kodo
+              Join by code only
             </ThemedText>
           </TouchableOpacity>
         </View>
@@ -133,7 +133,7 @@ export default function CreateGroupScreen() {
             <ActivityIndicator color={AuroraColors.onPrimary} />
           ) : (
             <ThemedText type="bodyBold" lightColor={AuroraColors.onPrimary} darkColor={AuroraColors.onPrimary}>
-              Ustvari skupino
+              Create Group
             </ThemedText>
           )}
         </TouchableOpacity>

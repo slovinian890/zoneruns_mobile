@@ -61,7 +61,7 @@ export function configureNotificationHandler(): void {
 async function ensureAndroidChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync(ATTACK_CHANNEL_ID, {
-    name: 'Napadi na ozemlje',
+    name: 'Territory attacks',
     importance: Notifications.AndroidImportance.MAX,
     vibrationPattern: [0, 250, 250, 250],
     lightColor: '#D9603B',
@@ -199,22 +199,17 @@ export async function getPlaceLabel(coord?: { latitude: number; longitude: numbe
 }
 
 /**
- * Slovenian noun case for "zone(s)" — used by the post-run claim summary
+ * Pluralized "zone"/"zones" — used by the post-run claim summary
  * (app/(tabs)/index.tsx), not by formatAttackMessage below (that one speaks
  * in exact m², matches supabase/functions/send-attack-push).
- * Correct for 1-19 (the realistic range); compound numbers like 21/22 would
- * need the last-digit rule too, not worth it for how this game plays out.
  */
 export function zoneWord(n: number): string {
-  if (n === 1) return 'območje';
-  if (n === 2) return 'območji';
-  if (n === 3 || n === 4) return 'območja';
-  return 'območij';
+  return n === 1 ? 'zone' : 'zones';
 }
 
 export function formatAttackMessage(row: AttackNotification): string {
-  const name = row.attacker_display_name || row.attacker_username || 'Nekdo';
+  const name = row.attacker_display_name || row.attacker_username || 'Someone';
   const area = formatArea(row.area_m2);
-  const placeClause = row.place_label ? ` blizu ${row.place_label}` : '';
-  return `${name} vam je pravkar vzel ${area}${placeClause} — in še kar nadaljuje!`;
+  const placeClause = row.place_label ? ` near ${row.place_label}` : '';
+  return `${name} just took ${area}${placeClause} from you — and they're not stopping!`;
 }

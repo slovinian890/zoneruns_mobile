@@ -8,6 +8,7 @@ import {
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import * as Location from 'expo-location';
+import * as Haptics from 'expo-haptics';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
@@ -22,20 +23,30 @@ import { StatBlock } from '@/components/ui/stat-block';
 import { TAB_BAR_HEIGHT } from '@/components/ui/floating-tab-bar';
 import RunningMap from '@/components/running-map';
 import TerritoryMap from '@/components/territory-map';
+import HexBattleMap from '@/components/hex-battle-map';
+import HexActionModal from '@/components/hex-action-modal';
+import BountyAmountModal from '@/components/bounty-amount-modal';
 import { createRun, secondsToInterval, calculatePace } from '@/services/runsService';
-import { updateUserStatsAfterRun, checkAndAwardAchievements } from '@/services/statsService';
+import { updateUserStatsAfterRun, checkAndAwardAchievements, getCurrentUserStats } from '@/services/statsService';
 import { getCurrentUser } from '@/services/authService';
-import { Run, RouteData, TerritoryFeature, GroupTerritoryFeature, ClaimTerritoryResult } from '@/services/supabase';
-import { getGroupTerritoriesInBounds, getMyGroups } from '@/services/groupsService';
+import { Run, RouteData, HexCell, GroupTerritoryFeature, ClaimTerritoryResult, MyActiveGroup } from '@/services/supabase';
+import { getGroupTerritoriesInBounds, getMyGroups, getMyActiveGroup } from '@/services/groupsService';
 import PostRunModal from '@/components/post-run-modal';
 import { getTrailColor, DEFAULT_TRAIL_COLOR } from '@/services/trailColorService';
 import { Colors } from '@/constants/theme';
 import {
-  getTerritoriesInBounds,
+  getHexesInBounds,
   claimTerritoryFromRun,
   getMyTerritoryStats,
   isLoopReady,
   formatArea,
+  fortifyHex,
+  placeBounty,
+  cancelMyBounty,
+  hexCellKey,
+  latLngToHexCell,
+  isHexAlly,
+  HexCellId,
 } from '@/services/territoryService';
 import { getPlaceLabel, notifyAttackVictims, zoneWord } from '@/services/notificationsService';
 import { coinsForDistance } from '@/services/coinsService';
@@ -52,16 +63,16 @@ import {
   addResumeRunActionListener,
   setLiveRunPlaybackState,
 } from '@/services/liveRunNotificationService';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 
 // GPS fixes worse than this (meters) are dropped instead of being drawn into
 // the trail or counted toward distance / loop closure — a bad single fix
 // otherwise shows up as a spike in the route and can throw off both.
 const NAJSLABSA_SPREJEMLJIVA_NATANCNOST_M = 30;
 
-// ── Haversine formula za izračun razdalje (km) med dvema GPS točkama ──
-// Uporablja polmer Zemlje (6371 km) in trigonometrične funkcije za natančen
-// izračun razdalje po površini krogle
+// ── Haversine formula for calculating distance (km) between two GPS points ──
+// Uses Earth's radius (6371 km) and trigonometric functions for an accurate
+// distance calculation across the sphere's surface
 const izracunajRazdaljo = (
   sir1: number,
   dol1: number,
@@ -79,34 +90,69 @@ const izracunajRazdaljo = (
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
-// ── Načini pogleda ──
+function sporociloZaNapakoPolja(reason?: string): string {
+  switch (reason) {
+    case 'not_owner':
+      return "This hex isn't yours.";
+    case 'max_level':
+      return 'This hex is already fully fortified.';
+    case 'insufficient_coins':
+      return "You don't have enough coins.";
+    default:
+      return 'Something went wrong.';
+  }
+}
+
+function sporociloZaNapakoNagrade(reason?: string): string {
+  switch (reason) {
+    case 'invalid_target':
+      return 'You can only place a bounty on hexes claimed by opponents.';
+    case 'insufficient_coins':
+      return "You don't have enough coins.";
+    case 'amount_too_small':
+      return 'The amount is too small for the number of hexes selected.';
+    default:
+      return 'Something went wrong.';
+  }
+}
+
+// ── View modes ──
 type Nacin = 'idle' | 'running' | 'compete';
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
+  const usmerjevalnik = useRouter();
 
-  // ── GPS & dovoljenja ──
+  // ── GPS & permissions ──
   const [lokacija, setLokacija] = useState<Location.LocationObject | null>(null);
   const [sporocilNapake, setSporocilNapake] = useState<string | null>(null);
   const [nalaganje, setNalaganje] = useState(true);
 
-  // ── Način ──
+  // ── Mode ──
   const [nacin, setNacin] = useState<Nacin>('idle');
   useAmbientVariant(nacin === 'running' ? 'active' : 'default');
 
-  // ── Stanje teka ──
+  // ── Run state ──
   const [razdalja, setRazdalja] = useState(0);
   const [trajanje, setTrajanje] = useState(0);
   const [zacetniCas, setZacetniCas] = useState<number | null>(null);
   const [pot, setPot] = useState<Array<{ latitude: number; longitude: number }>>([]);
   const [shranjevanje, setShranjevanje] = useState(false);
   const [pavzirano, setPavzirano] = useState(false);
-  // Ghost tek: izbran pred začetkom, velja za celoten tek, ki sledi — žrtvam
-  // ukradenega ozemlja ne pošlje "pod napadom" obvestila (glej
-  // claim_territory_from_run), tek sam in zaseg ozemlja pa potekata enako.
+  // Count of unique hex cells the GPS trail has already crossed this run —
+  // just a live "feel" during the run, not the actual capture (that happens
+  // only in ustaviTek via claim_territory_from_run on a closed loop).
+  const [steviloPrecrtanihPolj, setSteviloPrecrtanihPolj] = useState(0);
+  // Ghost run: chosen before starting, applies to the whole run that follows —
+  // doesn't send an "under attack" notification to victims of stolen territory
+  // (see claim_territory_from_run); the run itself and the capture still work the same.
   const [duhTek, setDuhTek] = useState(false);
+  // Whether Ghost Run has already been used today (see migrations/
+  // 019_ghost_run_daily_limit.sql) — refreshed on focus. Starts false
+  // (optimistic) so the toggle isn't wrongly disabled before the fetch resolves.
+  const [duhTekZeUporabljenDanes, setDuhTekZeUporabljenDanes] = useState(false);
 
-  // ── Reference ──
+  // ── Refs ──
   const narocninaLokacije = useRef<Location.LocationSubscription | null>(null);
   const casovnikRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const zadnjaLokacijaRef = useRef<{ latitude: number; longitude: number } | null>(null);
@@ -114,6 +160,13 @@ export default function HomeScreen() {
   // Mirrors `razdalja` for the live-run notification's 1s interval tick,
   // which otherwise would only ever see the state as of effect setup.
   const razdaljaRef = useRef(0);
+  // Set of "col,row" hex keys crossed so far this run (see hexCellKey) —
+  // a ref because it's mutated on every GPS tick and read inside the
+  // notification's 1s interval without needing either to re-render on its
+  // own. steviloPrecrtanihPoljRef mirrors its size for that same interval,
+  // same pattern as razdaljaRef/trajanjeRef below.
+  const precrtanaPoljaRef = useRef<Set<string>>(new Set());
+  const steviloPrecrtanihPoljRef = useRef(0);
   // Same idea for `trajanje`, so pavza/nadaljevanje can report the latest
   // elapsed time to the lock-screen notification without depending on it.
   const trajanjeRef = useRef(0);
@@ -132,35 +185,52 @@ export default function HomeScreen() {
   const prekiniTekRef = useRef<() => void>(() => {});
   const nadaljujTekRef = useRef<() => void>(() => {});
 
-  // ── Modal po teku ──
+  // ── Post-run modal ──
   const [prikaziModalObjave, setPrikaziModalObjave] = useState(false);
   const [shranjenTek, setShranjenTek] = useState<Run | null>(null);
   const [zadnjiRezultatOzemlja, setZadnjiRezultatOzemlja] = useState<ClaimTerritoryResult | null>(null);
   const [zasluzeniKovanci, setZasluzeniKovanci] = useState(0);
 
-  // ── Barva sledi ──
+  // ── Trail color ──
   const [barvaSled, setBarvaSled] = useState<string>(DEFAULT_TRAIL_COLOR);
 
-  // ── Stanje tekmovanja ──
-  const [teritoriji, setTeritorioji] = useState<TerritoryFeature[]>([]);
+  // ── Competition state ──
+  const [hexCelice, setHexCelice] = useState<HexCell[]>([]);
   const [teritorijiSkupin, setTeritorijiSkupin] = useState<GroupTerritoryFeature[]>([]);
   const [mojaPovrsina, setMojaPovrsina] = useState(0);
   const [uporabnikId, setUporabnikId] = useState<string>('');
   const [pogledOzemlja, setPogledOzemlja] = useState<'posamezniki' | 'skupine'>('posamezniki');
   const [mojeSkupineId, setMojeSkupineId] = useState<string[]>([]);
+  // The clan (if any) your runs currently claim/heal hexes for — see
+  // set_active_group / migrations/017_clan_hex_warfare.sql. Null = solo.
+  const [mojKlan, setMojKlan] = useState<MyActiveGroup | null>(null);
   const zadnjiOkvirRef = useRef<{ minLat: number; maxLat: number; minLng: number; maxLng: number } | null>(null);
 
-  // ── Naloži podatke uporabnika & barvo sledi ob fokusu ──
+  // ── Fortify & bounty on the competition map ──
+  const [mojiKovanci, setMojiKovanci] = useState(0);
+  const [nacinIzbire, setNacinIzbire] = useState(false);
+  const [izbranaPoljaNagrade, setIzbranaPoljaNagrade] = useState<HexCellId[]>([]);
+  const [aktivnoPolje, setAktivnoPolje] = useState<HexCell | null>(null);
+  const [prikaziModalPolja, setPrikaziModalPolja] = useState(false);
+  const [prikaziModalNagrade, setPrikaziModalNagrade] = useState(false);
+  const [obdelavaPolja, setObdelavaPolja] = useState(false);
+
+  // ── Load user data & trail color on focus ──
   useFocusEffect(
     useCallback(() => {
       getTrailColor().then(setBarvaSled);
       getCurrentUser().then((u) => {
         if (u) setUporabnikId(u.id);
       });
+      getMyActiveGroup().then(setMojKlan);
+      getCurrentUserStats().then((rezultat) => {
+        const danes = new Date().toISOString().split('T')[0];
+        setDuhTekZeUporabljenDanes(!!rezultat.success && rezultat.stats?.last_ghost_run_date === danes);
+      });
     }, []),
   );
 
-  // ── Animacija dihanja za aktivni časovnik ──
+  // ── Breathing animation for the active timer ──
   const dihalniPulz = useSharedValue(1);
 
   useEffect(() => {
@@ -179,8 +249,8 @@ export default function HomeScreen() {
     transform: [{ scale: dihalniPulz.value }],
   }));
 
-  // ── Neprekinjeno sledenje lokaciji v mirovanju ──
-  // Zahteva dovoljenja, preveri storitve in začne spremljati GPS pozicijo
+  // ── Continuous location tracking while idle ──
+  // Requests permissions, checks services, and starts watching GPS position
   useEffect(() => {
     let preklicano = false;
 
@@ -188,14 +258,14 @@ export default function HomeScreen() {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') {
-          setSporocilNapake('Dovoljenje za dostop do lokacije je bilo zavrnjeno');
+          setSporocilNapake('Location access permission was denied');
           setNalaganje(false);
           return;
         }
 
         const omogoceno = await Location.hasServicesEnabledAsync();
         if (!omogoceno) {
-          setSporocilNapake('Prosimo, omogočite lokacijske storitve v nastavitvah naprave');
+          setSporocilNapake('Please enable location services in your device settings');
           setNalaganje(false);
           return;
         }
@@ -216,7 +286,7 @@ export default function HomeScreen() {
         else narocnina.remove();
       } catch {
         if (!preklicano) {
-          setSporocilNapake('Napaka pri pridobivanju lokacije – preverite, ali je GPS vklopljen');
+          setSporocilNapake('Error getting your location — check that GPS is turned on');
           setNalaganje(false);
         }
       }
@@ -229,13 +299,13 @@ export default function HomeScreen() {
     };
   }, []);
 
-  // ── Časovnik + GPS sledenje v živo med tekom ──
-  // Ko se tek začne, ustavi mirovno sledenje in zažene sledenje lokaciji
-  // prek ozadnega taska (services/locationTask), ki pošilja točke tudi,
-  // če je zaslon zaklenjen ali je aplikacija v ozadju — telefon namreč
-  // med tekom običajno ni ves čas odklenjen v roki. Če se ozadnje sledenje
-  // iz kakršnegakoli razloga ne zažene (npr. dovoljenje zavrnjeno), pade
-  // nazaj na navadno sledenje v ospredju, da tek vseeno deluje.
+  // ── Timer + live GPS tracking during a run ──
+  // When the run starts, stops idle tracking and starts location tracking
+  // via the background task (services/locationTask), which keeps sending
+  // points even when the screen is locked or the app is backgrounded — the
+  // phone usually isn't unlocked in hand the whole run. If background
+  // tracking fails to start for any reason (e.g. permission denied), it
+  // falls back to regular foreground tracking so the run still works.
   useEffect(() => {
     if (!(nacin === 'running' && zacetniCas)) return;
 
@@ -254,12 +324,13 @@ export default function HomeScreen() {
         distanceLabel: razdaljaRef.current.toFixed(2),
         durationLabel: oblikujTrajanje(trajanjeSek),
         paceLabel: oblikujTempo(razdaljaRef.current, trajanjeSek),
+        hexCount: steviloPrecrtanihPoljRef.current,
       });
     }, 1000);
 
-    // Takoj prikaži obvestilo (ne čakaj na prvi tik časovnika), da se
-    // vmesnik na zaklenjenem zaslonu pojavi, brž ko se tek začne.
-    showLiveRunNotification({ distanceLabel: '0.00', durationLabel: '0:00', paceLabel: '0:00' });
+    // Show the notification immediately (don't wait for the timer's first
+    // tick) so the lock-screen UI appears as soon as the run starts.
+    showLiveRunNotification({ distanceLabel: '0.00', durationLabel: '0:00', paceLabel: '0:00', hexCount: 0 });
     const stopActionNarocnina = addStopRunActionListener(() => ustaviTekRef.current());
     const pauseActionNarocnina = addPauseRunActionListener(() => prekiniTekRef.current());
     const resumeActionNarocnina = addResumeRunActionListener(() => nadaljujTekRef.current());
@@ -267,12 +338,49 @@ export default function HomeScreen() {
     mirovanjeNarocnina.current?.remove();
     mirovanjeNarocnina.current = null;
 
+    // A new hex cell was just crossed for the first time this run — update
+    // the count and immediately (don't wait for the next 1s tick) flash the
+    // lock screen + a light haptic, so the sense of progress comes through
+    // even without looking at the phone. The next regular tick within ~1s
+    // overwrites it back to the normal display anyway, so no separate
+    // revert timer is needed.
+    const oznaciPoljeKotPrecrtano = (lat: number, lng: number) => {
+      const kljucPolja = hexCellKey(latLngToHexCell(lat, lng));
+      if (precrtanaPoljaRef.current.has(kljucPolja)) return;
+      precrtanaPoljaRef.current.add(kljucPolja);
+      const novoStevilo = precrtanaPoljaRef.current.size;
+      steviloPrecrtanihPoljRef.current = novoStevilo;
+      setSteviloPrecrtanihPolj(novoStevilo);
+
+      const jeMejnik = novoStevilo > 0 && novoStevilo % 10 === 0;
+      if (jeMejnik) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      } else {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      }
+
+      showLiveRunNotification(
+        {
+          distanceLabel: razdaljaRef.current.toFixed(2),
+          durationLabel: oblikujTrajanje(trajanjeRef.current),
+          paceLabel: oblikujTempo(razdaljaRef.current, trajanjeRef.current),
+          hexCount: novoStevilo,
+        },
+        { justCaptured: true },
+      );
+    };
+
     const obdelajNovoLokacijo = (novaLok: Location.LocationObject) => {
       if (!aktiven || pavziranoRef.current) return;
       const { latitude, longitude, accuracy } = novaLok.coords;
       if (accuracy != null && accuracy > NAJSLABSA_SPREJEMLJIVA_NATANCNOST_M) return;
 
       setLokacija(novaLok);
+
+      // Trusted point: the run's first point, or a segment small enough that
+      // it isn't a GPS jump — same criterion used for counting distance below,
+      // so one wild jump doesn't "cross" a hex far from the actual route.
+      let zanesljivaTocka = !zadnjaLokacijaRef.current;
 
       if (zadnjaLokacijaRef.current) {
         const odsek = izracunajRazdaljo(
@@ -284,8 +392,11 @@ export default function HomeScreen() {
         if (odsek < 0.1) {
           setRazdalja((prej) => prej + odsek);
           razdaljaRef.current += odsek;
+          zanesljivaTocka = true;
         }
       }
+
+      if (zanesljivaTocka) oznaciPoljeKotPrecrtano(latitude, longitude);
 
       zadnjaLokacijaRef.current = { latitude, longitude };
       setPot((prej) => [...prej, { latitude, longitude }]);
@@ -294,7 +405,7 @@ export default function HomeScreen() {
     setBackgroundLocationListener((lokacije) => lokacije.forEach(obdelajNovoLokacijo));
     startBackgroundLocationTracking().then((uspeh) => {
       if (!uspeh && aktiven) {
-        // Ni uspelo (npr. dovoljenje zavrnjeno) – nadaljuj vsaj v ospredju.
+        // Failed to start (e.g. permission denied) – continue in the foreground at least.
         Location.watchPositionAsync(
           { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1500, distanceInterval: 2 },
           obdelajNovoLokacijo,
@@ -328,7 +439,7 @@ export default function HomeScreen() {
     };
   }, [nacin, zacetniCas]);
 
-  // ── Začni tek ──
+  // ── Start run ──
   const zacniTek = useCallback(() => {
     setZacetniCas(Date.now());
     setRazdalja(0);
@@ -336,6 +447,9 @@ export default function HomeScreen() {
     setTrajanje(0);
     trajanjeRef.current = 0;
     setPot([]);
+    precrtanaPoljaRef.current = new Set();
+    steviloPrecrtanihPoljRef.current = 0;
+    setSteviloPrecrtanihPolj(0);
     if (lokacija) {
       const { latitude, longitude } = lokacija.coords;
       zadnjaLokacijaRef.current = { latitude, longitude };
@@ -344,40 +458,56 @@ export default function HomeScreen() {
     setNacin('running');
   }, [lokacija]);
 
-  // ── Prikaži rezultat zasega ozemlja po teku ──
-  const prikaziRezultatOzemlja = useCallback((rezultat: ClaimTerritoryResult) => {
+  // ── Show territory-claim result after a run ──
+  // zahtevanGhost is whether the player had Ghost Run toggled on for this
+  // run (passed in rather than closed over, since Ghost Run only actually
+  // applied if rezultat.ghost_active also came back true — see
+  // migrations/019_ghost_run_daily_limit.sql).
+  const prikaziRezultatOzemlja = useCallback((rezultat: ClaimTerritoryResult, zahtevanGhost: boolean) => {
     if (rezultat.success) {
       const ukradeno = rezultat.stolen ?? [];
       const skupajUkradeno = ukradeno.reduce((v, s) => v + s.area_m2, 0);
-      let sporocilo = `Zaseženo ${formatArea(rezultat.claimed_area_m2 ?? 0)} ozemlja!`;
+      let sporocilo = `Claimed ${formatArea(rezultat.claimed_area_m2 ?? 0)} of territory!`;
       if (ukradeno.length > 0) {
         const skupajObmocij = ukradeno.reduce((v, s) => v + (s.zones_lost ?? 0), 0);
-        sporocilo += `\nOd tega ${formatArea(skupajUkradeno)} (${skupajObmocij} ${zoneWord(skupajObmocij)}) ukradenega ${
-          ukradeno.length === 1 ? 'nasprotniku' : `od ${ukradeno.length} nasprotnikov`
-        }.`;
+        sporocilo += `\nOf that, ${formatArea(skupajUkradeno)} (${skupajObmocij} ${zoneWord(skupajObmocij)}) cleared from ${
+          ukradeno.length === 1 ? 'an opponent' : `${ukradeno.length} opponents`
+        } — now unclaimed.`;
       }
-      Alert.alert('Ozemlje zaseženo! 🏴', sporocilo);
+      if (rezultat.bounty_earned) {
+        sporocilo += `\n+${rezultat.bounty_earned} bounty coins for hexes cleared! 🎯`;
+      }
+      if (rezultat.night_bonus) {
+        sporocilo += `\n🌙 Night run bonus — new cells captured at +2 levels!`;
+      }
+      if (zahtevanGhost && !rezultat.ghost_active) {
+        sporocilo += `\n👻 Ghost run was already used today — this steal was visible to your victims.`;
+      }
+      Alert.alert('Territory claimed! 🏴', sporocilo);
     } else if (rezultat.reason === 'loop_not_closed') {
-      // Tiho – tek ni bil zanka, ni razloga za opozorilo ob vsakem teku
+      // Silent – the run wasn't a loop, no reason to warn on every run
     } else if (rezultat.reason === 'daily_limit_reached') {
-      Alert.alert('Že ste zasegli ozemlje danes', 'Zaseg ozemlja je mogoč enkrat na dan. Poskusite znova jutri.');
+      Alert.alert('You already claimed territory today', 'Territory can only be claimed once a day. Try again tomorrow.');
     }
   }, []);
 
-  // ── Ustavi tek & shrani ──
-  // Preveri minimalno trajanje, izračuna tempo in kalorije,
-  // pripravi podatke o poti in shrani tek v bazo
+  // ── Stop run & save ──
+  // Checks minimum duration, calculates pace and calories,
+  // prepares route data, and saves the run to the database
   const ustaviTek = useCallback(async () => {
     setNacin('idle');
 
     if (trajanje < 5) {
-      Alert.alert('Tek prekratek', 'Tecite vsaj nekaj sekund za shranitev.');
+      Alert.alert('Run too short', 'Run for at least a few seconds to save it.');
       setRazdalja(0); setTrajanje(0); setPot([]); setZacetniCas(null);
       zadnjaLokacijaRef.current = null;
       pavziranoRef.current = false;
       pavzaZacetekRef.current = null;
       setPavzirano(false);
       setDuhTek(false);
+      precrtanaPoljaRef.current = new Set();
+      steviloPrecrtanihPoljRef.current = 0;
+      setSteviloPrecrtanihPolj(0);
       return;
     }
 
@@ -386,7 +516,7 @@ export default function HomeScreen() {
     try {
       const uporabnik = await getCurrentUser();
       if (!uporabnik) {
-        Alert.alert('Napaka', 'Prosimo, prijavite se za shranitev teka');
+        Alert.alert('Error', 'Please sign in to save your run');
         setShranjevanje(false);
         return;
       }
@@ -403,15 +533,15 @@ export default function HomeScreen() {
         trailColor: barvaSled,
       };
 
-      // Teče vzporedno s shranjevanjem teka spodaj — brez API ključa (uporabi
-      // že dovoljeno lokacijo naprave), zato lahko tiho spodleti brez posledic.
+      // Runs in parallel with saving the run below — no API key (uses the
+      // device's already-granted location), so it can silently fail with no consequences.
       const krajZasegaPromise = getPlaceLabel(podatkiPoti.startLocation ?? null);
 
       const zdaj = new Date();
       const casTekaOblikovan = `${zdaj.getHours().toString().padStart(2, '0')}:${zdaj.getMinutes().toString().padStart(2, '0')}:${zdaj.getSeconds().toString().padStart(2, '0')}`;
 
       const rezultat = await createRun({
-        title: `Tek – ${zdaj.toLocaleDateString('sl-SI', { weekday: 'short', month: 'short', day: 'numeric' })}`,
+        title: `Run – ${zdaj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}`,
         run_date: zdaj.toISOString().split('T')[0],
         run_time: casTekaOblikovan,
         distance_km: Math.round(razdalja * 100) / 100,
@@ -428,17 +558,18 @@ export default function HomeScreen() {
           if (rezultatStatistike.success && rezultatStatistike.stats) {
             const noveDosezki = await checkAndAwardAchievements(rezultat.run, rezultatStatistike.stats);
             if (noveDosezki.length > 0) {
-              Alert.alert('Dosežek odklenjen! 🏆', noveDosezki.map((d) => d.title).join(', '));
+              Alert.alert('Achievement unlocked! 🏆', noveDosezki.map((d) => d.title).join(', '));
             }
           }
 
-          // Poskusi zaseči ozemlje, če je pot sklenjena zanka
+          // Try to claim territory if the route is a closed loop
           const rezultatOzemlja = await claimTerritoryFromRun(rezultat.run.id, await krajZasegaPromise);
-          prikaziRezultatOzemlja(rezultatOzemlja);
+          prikaziRezultatOzemlja(rezultatOzemlja, duhTek);
+          if (rezultatOzemlja.ghost_active) setDuhTekZeUporabljenDanes(true);
 
-          // Če smo komu ukradli ozemlje, pošlji push "pod napadom" obvestilo
-          // žrtvam (best-effort – attack_notifications vrstica že obstaja v
-          // bazi ne glede na to, ali ta klic uspe).
+          // If we stole territory from someone, send a push "under attack"
+          // notification to the victims (best-effort – the attack_notifications
+          // row already exists in the DB regardless of whether this call succeeds).
           if (rezultatOzemlja.success && (rezultatOzemlja.stolen?.length ?? 0) > 0) {
             void notifyAttackVictims(rezultat.run.id);
           }
@@ -450,7 +581,7 @@ export default function HomeScreen() {
         }
 
         if (rezultat.queued) {
-          Alert.alert('Shranjeno brez povezave', 'Vaš tek se bo sinhroniziral, ko boste spet na spletu.');
+          Alert.alert('Saved offline', "Your run will sync once you're back online.");
         }
 
         setRazdalja(0); setTrajanje(0); setPot([]); setZacetniCas(null);
@@ -459,23 +590,26 @@ export default function HomeScreen() {
         pavzaZacetekRef.current = null;
         setPavzirano(false);
         setDuhTek(false);
+        precrtanaPoljaRef.current = new Set();
+        steviloPrecrtanihPoljRef.current = 0;
+        setSteviloPrecrtanihPolj(0);
       } else {
-        Alert.alert('Napaka', rezultat.error || 'Shranjevanje teka ni uspelo');
+        Alert.alert('Error', rezultat.error || 'Failed to save run');
       }
     } catch (napaka) {
-      console.error('Napaka pri ustavitvi teka:', napaka);
-      Alert.alert('Napaka', 'Nekaj je šlo narobe pri shranjevanju teka.');
+      console.error('Error stopping run:', napaka);
+      Alert.alert('Error', 'Something went wrong while saving your run.');
     } finally {
       setShranjevanje(false);
     }
   }, [trajanje, razdalja, pot, barvaSled, duhTek, prikaziRezultatOzemlja]);
 
-  // ── Premor & nadaljevanje teka ──
-  // Pavza samo ustavi časovnik/GPS obdelavo (prek pavziranoRef) — ozadnje
-  // sledenje lokaciji teče naprej, da se ne podvaja zagon/ustavitev
-  // ozadnega taska. Ob nadaljevanju premaknemo zacetniCasRef naprej za
-  // trajanje premora, da trajanje ne "poskoči", in ponastavimo zadnjo
-  // lokacijo, da prvi GPS popravek po premoru ne šteje kot prehojena pot.
+  // ── Pause & resume run ──
+  // Pausing only stops the timer/GPS processing (via pavziranoRef) — background
+  // location tracking keeps running, so the background task doesn't get
+  // started/stopped twice. On resume, we shift zacetniCasRef forward by the
+  // pause duration so the duration doesn't "jump", and reset the last location
+  // so the first GPS fix after resuming doesn't count as covered distance.
   const prekiniTek = useCallback(() => {
     if (pavziranoRef.current) return;
     pavziranoRef.current = true;
@@ -487,6 +621,7 @@ export default function HomeScreen() {
         distanceLabel: razdaljaRef.current.toFixed(2),
         durationLabel: oblikujTrajanje(trajanjeRef.current),
         paceLabel: oblikujTempo(razdaljaRef.current, trajanjeRef.current),
+        hexCount: steviloPrecrtanihPoljRef.current,
       },
       { paused: true },
     );
@@ -507,6 +642,7 @@ export default function HomeScreen() {
       distanceLabel: razdaljaRef.current.toFixed(2),
       durationLabel: oblikujTrajanje(trajanjeRef.current),
       paceLabel: oblikujTempo(razdaljaRef.current, trajanjeRef.current),
+      hexCount: steviloPrecrtanihPoljRef.current,
     });
   }, []);
 
@@ -516,10 +652,10 @@ export default function HomeScreen() {
     nadaljujTekRef.current = nadaljujTek;
   }, [ustaviTek, prekiniTek, nadaljujTek]);
 
-  // ── Naloži ozemlja za trenutni pogled zemljevida ──
-  // Zapomni si zadnji okvir, da lahko preklopiOzemljaPogled znova naloži
-  // podatke za nov način (posamezniki/skupine), ne da bi čakali, da uporabnik
-  // znova premakne karto.
+  // ── Load territories for the current map view ──
+  // Remembers the last bounds so preklopiPogledOzemlja can reload data for the
+  // new mode (solo/groups) immediately, without waiting for the user to pan
+  // the map again.
   const naloziOzemljaVOkviru = useCallback(
     async (minLat: number, maxLat: number, minLng: number, maxLng: number) => {
       zadnjiOkvirRef.current = { minLat, maxLat, minLng, maxLng };
@@ -527,14 +663,28 @@ export default function HomeScreen() {
         const podatki = await getGroupTerritoriesInBounds(minLat, minLng, maxLat, maxLng);
         setTeritorijiSkupin(podatki);
       } else {
-        const podatki = await getTerritoriesInBounds(minLat, minLng, maxLat, maxLng);
-        setTeritorioji(podatki);
+        const podatki = await getHexesInBounds(minLat, minLng, maxLat, maxLng);
+        setHexCelice(podatki);
       }
     },
     [pogledOzemlja],
   );
 
-  // ── Preklopi med pogledom "posamezniki" in "skupine" na karti ozemelj ──
+  // Reload hexes for the current bounds — called after fortify/bounty, since
+  // the level/bounty on the map change without the map being panned.
+  const osveziHexCelice = useCallback(async () => {
+    const okvir = zadnjiOkvirRef.current;
+    if (!okvir) return;
+    const podatki = await getHexesInBounds(okvir.minLat, okvir.minLng, okvir.maxLat, okvir.maxLng);
+    setHexCelice(podatki);
+  }, []);
+
+  const osveziMojeKovance = useCallback(async () => {
+    const rezultat = await getCurrentUserStats();
+    if (rezultat.success && rezultat.stats) setMojiKovanci(rezultat.stats.coins ?? 0);
+  }, []);
+
+  // ── Toggle between "solo" and "groups" view on the territory map ──
   const preklopiPogledOzemlja = useCallback(
     (novPogled: 'posamezniki' | 'skupine') => {
       setPogledOzemlja(novPogled);
@@ -543,29 +693,126 @@ export default function HomeScreen() {
       if (novPogled === 'skupine') {
         getGroupTerritoriesInBounds(okvir.minLat, okvir.minLng, okvir.maxLat, okvir.maxLng).then(setTeritorijiSkupin);
       } else {
-        getTerritoriesInBounds(okvir.minLat, okvir.minLng, okvir.maxLat, okvir.maxLng).then(setTeritorioji);
+        getHexesInBounds(okvir.minLat, okvir.minLng, okvir.maxLat, okvir.maxLng).then(setHexCelice);
       }
     },
     [],
   );
 
-  // ── Vstopi v način tekmovanja ──
+  // ── Enter competition mode ──
   const obdelajTekmovanje = useCallback(async () => {
     setNacin('compete');
     setPogledOzemlja('posamezniki');
+    setNacinIzbire(false);
+    setIzbranaPoljaNagrade([]);
 
     const [{ areaM2 }, rezultatSkupin] = await Promise.all([getMyTerritoryStats(), getMyGroups()]);
     setMojaPovrsina(areaM2);
     setMojeSkupineId(rezultatSkupin.success ? (rezultatSkupin.groups ?? []).map((s) => s.id) : []);
+    void osveziMojeKovance();
 
     if (lokacija) {
       const { latitude: la, longitude: lo } = lokacija.coords;
-      const zamik = 0.01; // ~1km okvir ob vstopu, dokler karta ne sporoči natančnega pogleda
-      await naloziOzemljaVOkviru(la - zamik, la + zamik, lo - zamik, lo + zamik);
+      const zamik = 0.01; // ~1km bounds on entry, until the map reports its exact view
+      const okvir = { minLat: la - zamik, maxLat: la + zamik, minLng: lo - zamik, maxLng: lo + zamik };
+      // Fetches hexes directly rather than going through naloziOzemljaVOkviru —
+      // that callback closes over whatever pogledOzemlja *was* on the last
+      // render, which can still be 'skupine' here (the setPogledOzemlja above
+      // hasn't committed yet), so it would briefly fetch group territories
+      // into the wrong state slot instead of the hexes just claimed by the
+      // run the player likely just finished.
+      zadnjiOkvirRef.current = okvir;
+      const podatki = await getHexesInBounds(okvir.minLat, okvir.minLng, okvir.maxLat, okvir.maxLng);
+      setHexCelice(podatki);
     }
-  }, [lokacija, naloziOzemljaVOkviru]);
+  }, [lokacija, osveziMojeKovance]);
 
-  // ── Oblikovalci ──
+  // ── Hex tap on the battle map ──
+  const obdelajDotikPolja = useCallback(
+    (celica: HexCell) => {
+      const jeSovraznik = !!celica.userId && !isHexAlly(celica.userId, celica.ownerGroupId, uporabnikId, mojKlan?.group_id ?? null);
+      if (nacinIzbire && jeSovraznik) {
+        setIzbranaPoljaNagrade((prej) => {
+          const key = hexCellKey({ col: celica.hexCol, row: celica.hexRow });
+          const obstaja = prej.some((h) => hexCellKey(h) === key);
+          if (obstaja) return prej.filter((h) => hexCellKey(h) !== key);
+          if (prej.length >= 20) return prej;
+          return [...prej, { col: celica.hexCol, row: celica.hexRow }];
+        });
+        return;
+      }
+      setAktivnoPolje(celica);
+      setPrikaziModalPolja(true);
+    },
+    [nacinIzbire, uporabnikId, mojKlan],
+  );
+
+  const preklopiNacinIzbire = useCallback(() => {
+    setNacinIzbire((prej) => {
+      if (prej) setIzbranaPoljaNagrade([]);
+      return !prej;
+    });
+  }, []);
+
+  const obdelajUtrditev = useCallback(async () => {
+    if (!aktivnoPolje) return;
+    setObdelavaPolja(true);
+    const rezultat = await fortifyHex(aktivnoPolje.hexCol, aktivnoPolje.hexRow);
+    setObdelavaPolja(false);
+    if (rezultat.success) {
+      setPrikaziModalPolja(false);
+      setAktivnoPolje(null);
+      Alert.alert('Hex fortified! 🛡️', `Defense level now ${rezultat.new_level}/5 (−${rezultat.cost} coins).`);
+      await Promise.all([osveziHexCelice(), osveziMojeKovance()]);
+    } else {
+      Alert.alert('Fortify failed', sporociloZaNapakoPolja(rezultat.reason));
+    }
+  }, [aktivnoPolje, osveziHexCelice, osveziMojeKovance]);
+
+  const obdelajPreklicNagrade = useCallback(async () => {
+    if (!aktivnoPolje) return;
+    setObdelavaPolja(true);
+    const rezultat = await cancelMyBounty(aktivnoPolje.hexCol, aktivnoPolje.hexRow);
+    setObdelavaPolja(false);
+    if (rezultat.success) {
+      setPrikaziModalPolja(false);
+      setAktivnoPolje(null);
+      Alert.alert('Bounty canceled', `Refunded ${rezultat.refunded} coins.`);
+      await Promise.all([osveziHexCelice(), osveziMojeKovance()]);
+    } else {
+      Alert.alert('Error', 'Failed to cancel bounty.');
+    }
+  }, [aktivnoPolje, osveziHexCelice, osveziMojeKovance]);
+
+  const obdelajZacetekNagrade = useCallback(() => {
+    if (!aktivnoPolje) return;
+    setIzbranaPoljaNagrade([{ col: aktivnoPolje.hexCol, row: aktivnoPolje.hexRow }]);
+    setPrikaziModalPolja(false);
+    setPrikaziModalNagrade(true);
+  }, [aktivnoPolje]);
+
+  const obdelajPotrditevNagrade = useCallback(
+    async (znesek: number) => {
+      setObdelavaPolja(true);
+      const rezultat = await placeBounty(izbranaPoljaNagrade, znesek);
+      setObdelavaPolja(false);
+      if (rezultat.success) {
+        setPrikaziModalNagrade(false);
+        setIzbranaPoljaNagrade([]);
+        setNacinIzbire(false);
+        Alert.alert(
+          'Bounty placed! 🎯',
+          `${rezultat.per_hex_amount} coins on each of ${rezultat.hex_count} hexes (${rezultat.total_charged} total).`,
+        );
+        await Promise.all([osveziHexCelice(), osveziMojeKovance()]);
+      } else {
+        Alert.alert('Bounty failed', sporociloZaNapakoNagrade(rezultat.reason));
+      }
+    },
+    [izbranaPoljaNagrade, osveziHexCelice, osveziMojeKovance],
+  );
+
+  // ── Formatters ──
   const oblikujTrajanje = (sekunde: number): string => {
     const ure = Math.floor(sekunde / 3600);
     const minute = Math.floor((sekunde % 3600) / 60);
@@ -583,14 +830,14 @@ export default function HomeScreen() {
   const tempo = oblikujTempo(razdalja, trajanje);
   const zankaPripravljena = nacin === 'running' && isLoopReady(pot);
 
-  // ── Stanja nalaganja / napake ──
+  // ── Loading / error states ──
   if (nalaganje) {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.centeredContainer}>
           <ActivityIndicator size="large" color={AuroraColors.primary} />
           <ThemedText type="body" variant="secondary" style={{ marginTop: Spacing.md }}>
-            Pridobivanje vaše lokacije...
+            Getting your location...
           </ThemedText>
         </View>
       </ThemedView>
@@ -614,7 +861,7 @@ export default function HomeScreen() {
   const { latitude, longitude } = lokacija.coords;
 
   // ══════════════════════════════════════════════════════════
-  // ── POGLED TEKMOVANJA ──
+  // ── COMPETITION VIEW ──
   // ══════════════════════════════════════════════════════════
   if (nacin === 'compete') {
     return (
@@ -628,32 +875,54 @@ export default function HomeScreen() {
                 <IconSymbol name="chevron.left" size={22} color={AuroraColors.primary} />
               </TouchableOpacity>
               <IconSymbol name="hexagon.fill" size={26} color={AuroraColors.primary} />
-              <ThemedText type="h3">Ozemlje</ThemedText>
+              <ThemedText type="h3">Territory</ThemedText>
             </View>
           </View>
 
           <View style={styles.tileBadge}>
             <StatBlock
               stats={[
-                { value: formatArea(mojaPovrsina), label: 'vaše ozemlje' },
+                { value: formatArea(mojaPovrsina), label: 'your territory' },
+                ...(pogledOzemlja === 'posamezniki' ? [{ value: String(mojiKovanci), label: 'coins' }] : []),
               ]}
             />
             <View style={styles.colorDotRow}>
               <View style={[styles.colorDot, { backgroundColor: barvaSled }]} />
-              <ThemedText type="caption" variant="muted">vaša barva</ThemedText>
+              <ThemedText type="caption" variant="muted">your color</ThemedText>
             </View>
+            {!!mojKlan && (
+              <TouchableOpacity onPress={() => usmerjevalnik.push('/groups')} style={styles.clanRow} activeOpacity={0.7}>
+                <View style={[styles.clanDot, { backgroundColor: mojKlan.color }]} />
+                <ThemedText type="caption" variant="muted">running for {mojKlan.name}</ThemedText>
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={styles.segmentedWrap}>
             <SegmentedControl
               segments={[
-                { key: 'posamezniki', label: 'Posamezniki' },
-                { key: 'skupine', label: 'Skupine' },
+                { key: 'posamezniki', label: 'Solo' },
+                { key: 'skupine', label: 'Groups' },
               ]}
               value={pogledOzemlja}
               onChange={(key) => preklopiPogledOzemlja(key as 'posamezniki' | 'skupine')}
             />
           </View>
+
+          {pogledOzemlja === 'posamezniki' && (
+            <TouchableOpacity
+              onPress={preklopiNacinIzbire}
+              style={[styles.ghostToggle, nacinIzbire ? styles.ghostToggleActive : styles.ghostToggleInactive, { marginTop: Spacing.sm, marginBottom: 0 }]}>
+              <IconSymbol name="bounty.fill" size={14} color={nacinIzbire ? AuroraColors.onPrimary : AuroraColors.textMuted} />
+              <ThemedText
+                type="caption"
+                lightColor={nacinIzbire ? AuroraColors.onPrimary : undefined}
+                darkColor={nacinIzbire ? AuroraColors.onPrimary : undefined}
+                variant={nacinIzbire ? undefined : 'muted'}>
+                {nacinIzbire ? `Selecting hexes for bounty (${izbranaPoljaNagrade.length})` : 'Select hexes for bounty'}
+              </ThemedText>
+            </TouchableOpacity>
+          )}
         </View>
 
         {pogledOzemlja === 'skupine' ? (
@@ -675,23 +944,60 @@ export default function HomeScreen() {
             onBoundsChanged={naloziOzemljaVOkviru}
           />
         ) : (
-          <TerritoryMap
+          <HexBattleMap
             latitude={latitude}
             longitude={longitude}
             colors={Colors.dark}
-            trailColor={barvaSled}
-            territories={teritoriji}
-            highlightIds={uporabnikId ? [uporabnikId] : []}
-            mode="individual"
+            myUserId={uporabnikId}
+            myGroupId={mojKlan?.group_id ?? null}
+            cells={hexCelice}
+            selected={izbranaPoljaNagrade}
             onBoundsChanged={naloziOzemljaVOkviru}
+            onHexTap={obdelajDotikPolja}
           />
         )}
+
+        {pogledOzemlja === 'posamezniki' && nacinIzbire && izbranaPoljaNagrade.length > 0 && (
+          <View style={[styles.selectionBar, { paddingBottom: insets.bottom + Spacing.md }]}>
+            <BlurView intensity={24} tint="dark" style={StyleSheet.absoluteFillObject} />
+            <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, styles.headerTint]} />
+            <ThemedText type="bodyBold">{izbranaPoljaNagrade.length} hexes selected</ThemedText>
+            <GradientButton
+              label="Set bounty"
+              icon="bounty.fill"
+              onPress={() => setPrikaziModalNagrade(true)}
+              variant="primary"
+            />
+          </View>
+        )}
+
+        <HexActionModal
+          visible={prikaziModalPolja}
+          cell={aktivnoPolje}
+          myUserId={uporabnikId}
+          myGroupId={mojKlan?.group_id ?? null}
+          myCoins={mojiKovanci}
+          busy={obdelavaPolja}
+          onClose={() => { setPrikaziModalPolja(false); setAktivnoPolje(null); }}
+          onFortify={obdelajUtrditev}
+          onStartBounty={obdelajZacetekNagrade}
+          onCancelBounty={obdelajPreklicNagrade}
+        />
+
+        <BountyAmountModal
+          visible={prikaziModalNagrade}
+          hexes={izbranaPoljaNagrade}
+          myCoins={mojiKovanci}
+          busy={obdelavaPolja}
+          onClose={() => setPrikaziModalNagrade(false)}
+          onConfirm={obdelajPotrditevNagrade}
+        />
       </ThemedView>
     );
   }
 
   // ══════════════════════════════════════════════════════════
-  // ── MIROVANJE + TEK POGLED ──
+  // ── IDLE + RUN VIEW ──
   // ══════════════════════════════════════════════════════════
   return (
     <ThemedView style={styles.container}>
@@ -710,8 +1016,9 @@ export default function HomeScreen() {
             <StatBlock
               stats={[
                 { value: razdalja.toFixed(2), label: 'km' },
-                { value: oblikujTrajanje(trajanje), label: 'čas' },
-                { value: tempo, label: 'tempo/km' },
+                { value: oblikujTrajanje(trajanje), label: 'time' },
+                { value: tempo, label: 'pace/km' },
+                { value: String(steviloPrecrtanihPolj), label: 'hexes' },
               ]}
             />
           </Animated.View>
@@ -734,8 +1041,8 @@ export default function HomeScreen() {
               darkColor={zankaPripravljena ? AuroraColors.onPrimary : undefined}
               variant={zankaPripravljena ? undefined : 'muted'}>
               {zankaPripravljena
-                ? 'Zanka sklenjena – ustavite za zaseg ozemlja!'
-                : 'Tecite nazaj proti začetku, da sklenete zanko'}
+                ? 'Loop closed — stop to claim territory!'
+                : 'Run back toward your start to close the loop'}
             </ThemedText>
           </View>
         )}
@@ -763,9 +1070,20 @@ export default function HomeScreen() {
         <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, styles.headerTint]} />
         {nacin === 'idle' ? (
           <>
+            {!!mojKlan && (
+              <TouchableOpacity onPress={() => usmerjevalnik.push('/groups')} style={styles.clanRunningForRow} activeOpacity={0.7}>
+                <View style={[styles.clanDot, { backgroundColor: mojKlan.color }]} />
+                <ThemedText type="caption" variant="muted">Running for {mojKlan.name} — tap to switch</ThemedText>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               onPress={() => setDuhTek((v) => !v)}
-              style={[styles.ghostToggle, duhTek ? styles.ghostToggleActive : styles.ghostToggleInactive]}>
+              disabled={duhTekZeUporabljenDanes}
+              style={[
+                styles.ghostToggle,
+                duhTek ? styles.ghostToggleActive : styles.ghostToggleInactive,
+                duhTekZeUporabljenDanes && styles.ghostToggleDisabled,
+              ]}>
               <IconSymbol
                 name="ghost.fill"
                 size={16}
@@ -776,19 +1094,21 @@ export default function HomeScreen() {
                 lightColor={duhTek ? AuroraColors.onPrimary : undefined}
                 darkColor={duhTek ? AuroraColors.onPrimary : undefined}
                 variant={duhTek ? undefined : 'muted'}>
-                {duhTek ? 'Ghost tek — žrtve ne bodo obveščene' : 'Ghost tek'}
+                {duhTekZeUporabljenDanes
+                  ? 'Ghost run already used today'
+                  : duhTek ? "Ghost run — victims won't be notified" : 'Ghost run'}
               </ThemedText>
             </TouchableOpacity>
             <View style={styles.buttonRow}>
               <GradientButton
-                label="Začni tek"
+                label="Start run"
                 icon="play.fill"
                 onPress={zacniTek}
                 variant="primary"
                 style={{ flex: 1 }}
               />
               <GradientButton
-                label="Tekmuj"
+                label="Compete"
                 icon="hexagon.fill"
                 onPress={obdelajTekmovanje}
                 variant="outline"
@@ -798,7 +1118,7 @@ export default function HomeScreen() {
         ) : (
           <View style={styles.buttonRow}>
             <GradientButton
-              label={pavzirano ? 'Nadaljuj' : 'Premor'}
+              label={pavzirano ? 'Resume' : 'Pause'}
               icon={pavzirano ? 'play.fill' : 'pause.fill'}
               onPress={pavzirano ? nadaljujTek : prekiniTek}
               variant="primary"
@@ -806,7 +1126,7 @@ export default function HomeScreen() {
               style={{ flex: 1 }}
             />
             <GradientButton
-              label={shranjevanje ? 'Shranjevanje...' : 'Ustavi & shrani'}
+              label={shranjevanje ? 'Saving...' : 'Stop & save'}
               icon="stop.fill"
               onPress={ustaviTek}
               variant="danger"
@@ -909,6 +1229,24 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 4,
   },
+  clanRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: Spacing.sm,
+  },
+  clanDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  clanRunningForRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginBottom: Spacing.sm,
+  },
   controlPanel: {
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.md,
@@ -936,5 +1274,22 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: AuroraColors.border,
+  },
+  ghostToggleDisabled: {
+    opacity: 0.5,
+  },
+  selectionBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.md,
+    overflow: 'hidden',
+    borderTopWidth: 1,
+    borderTopColor: AuroraColors.border,
   },
 });
