@@ -92,7 +92,8 @@
     },
     "owner": "filip90",
     "updates": {
-      "url": "https://u.expo.dev/10e5f3e0-4e00-47eb-bd9d-e1d2e8dbf5d3"
+      "url": "https://u.expo.dev/10e5f3e0-4e00-47eb-bd9d-e1d2e8dbf5d3",
+      "checkAutomatically": "NEVER"
     }
   }
 }
