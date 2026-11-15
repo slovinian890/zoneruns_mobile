@@ -1,0 +1,48 @@
+workflows:
+  ios-testflight:
+    name: iOS TestFlight
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: ASC Key
+    environment:
+      groups:
+        - expo_env
+      node: 20
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.filip90.runner
+    scripts:
+      - name: Install
+        script: |
+          cd react/Runner
+          npm ci
+      - name: Prebuild
+        script: |
+          cd react/Runner
+          CI=1 npx expo prebuild -p ios
+      - name: Pods
+        script: |
+          cd react/Runner/ios
+          pod install
+      - name: Signing
+        script: |
+          cd react/Runner
+          xcode-project use-profiles
+      - name: Build number
+        script: |
+          cd react/Runner/ios
+          LATEST=$(app-store-connect get-latest-testflight-build-number "6832228310")
+          agvtool new-version -all $((LATEST + 1))
+      - name: Build
+        script: |
+          cd react/Runner
+          xcode-project build-ipa \
+            --workspace "$(ls -d ios/*.xcworkspace)" \
+            --scheme Runner
+    artifacts:
+      - react/Runner/build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
