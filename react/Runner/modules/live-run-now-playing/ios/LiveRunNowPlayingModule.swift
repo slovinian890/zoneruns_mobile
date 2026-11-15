@@ -65,7 +65,9 @@ public class LiveRunNowPlayingModule: Module {
     let newPlayer = AVAudioPlayerNode()
     newEngine.attach(newPlayer)
 
-    let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1)
+    guard let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1) else {
+      return
+    }
     let frameCount = AVAudioFrameCount(format.sampleRate)
 
     guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
