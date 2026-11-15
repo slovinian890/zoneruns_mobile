@@ -1,0 +1,9 @@
+{
+  "name": "live-run-now-playing",
+  "version": "1.0.0",
+  "description": "Native iOS Now Playing / lock-screen media controls for the live run overlay",
+  "main": "index.js",
+  "license": "UNLICENSED",
+  "author": "ZoneRuns",
+  "homepage": "https://github.com/slovinian890/zoneruns_mobile"
+}

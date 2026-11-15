@@ -1,37 +1,89 @@
 /**
- * Live run lock-screen controls — a real media-session notification (Android
- * MediaStyle) that shows while a run is being tracked, on the lock screen
- * itself, the same surface Spotify uses for its Now Playing card. It mirrors
- * the in-app stats (distance/time/pace/hex tiles crossed) and exposes
- * Play/Pause (pause/resume the run) and Stop (stop & save) controls without
- * needing to unlock the phone. Crossing into a new hex tile flashes a
- * one-off celebratory title (see `buildTitle`) instead of the usual stats.
+ * Live run lock-screen controls — a real media-session notification that
+ * shows while a run is being tracked, on the lock screen itself, the same
+ * surface Spotify uses for its Now Playing card. It mirrors the in-app
+ * stats (distance/time/pace/hex tiles crossed) and exposes Play/Pause
+ * (pause/resume the run) and Stop (stop & save) controls without needing to
+ * unlock the phone. Crossing into a new hex tile flashes a one-off
+ * celebratory title (see `buildTitle`) instead of the usual stats.
  *
- * Android-only for now: react-native-track-player doesn't support the New
- * Architecture yet, and its JS entry touches the native module at *import
- * time* on any non-Android platform (`new NativeEventEmitter(TrackPlayer)`),
- * which crashed every iOS launch as soon as this module was imported (this
- * file is pulled in by the Run tab, so that's almost immediately after
- * sign-in) — Android's equivalent path is a pure-JS DeviceEventEmitter and
- * never touches the native side, which is why this never showed up there.
- * Every export below is a safe no-op on iOS until that's resolved upstream;
- * the library itself is never `require`d on that platform.
+ * Two completely separate native paths, chosen per-platform:
  *
- * react-native-track-player is built for audio apps, so a silent looping
- * track is kept "playing" the whole run just to hold a live media session
- * open — only its metadata (title/artist/artwork) is what the user actually
- * sees; the track itself is never meant to be heard. Pressing the system
- * Play/Pause button pauses/resumes the *run* (via the listeners below), not
- * just the silent audio.
+ * - Android: react-native-track-player (MediaStyle notification). Its JS
+ *   entry touches the native module at *import time* on any non-Android
+ *   platform (`new NativeEventEmitter(TrackPlayer)`), which crashes on
+ *   iOS before the Platform check below even runs — so the library is
+ *   never `require`d outside this Android branch (see also index.js, which
+ *   guards the module's own static import the same way).
+ * - iOS: a small local native module (`modules/live-run-now-playing`,
+ *   Swift) wrapping MPNowPlayingInfoCenter/MPRemoteCommandCenter directly.
+ *   react-native-track-player doesn't support iOS under the New
+ *   Architecture (newArchEnabled is on for this app) — confirmed still true
+ *   at the latest published version (4.1.2) as of writing; even its
+ *   Android side needed the native patch in
+ *   patches/react-native-track-player+4.1.2.patch to work under New
+ *   Architecture, so patching its iOS internals blind (unverifiable from
+ *   this Windows dev machine, no Xcode) was judged riskier than a small
+ *   purpose-built module.
+ *
+ * Both paths use the same trick: a silent, looping "track"/audio buffer is
+ * kept "playing" the whole run just to hold a live media session open —
+ * only the metadata (title/artist) is what the user actually sees/hears
+ * (nothing, since it's silent). Pressing the system Play/Pause/Stop button
+ * controls the *run* (via the listeners below), not just the silent audio.
  */
 import { Platform } from 'react-native';
+import { requireOptionalNativeModule } from 'expo-modules-core';
 
 const IS_ANDROID = Platform.OS === 'android';
+const IS_IOS = Platform.OS === 'ios';
 
 /** Lazy + Android-only so the native module is never touched on iOS. */
 function trackPlayerModule(): typeof import('react-native-track-player') {
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- must stay lazy, not a static import
   return require('react-native-track-player');
+}
+
+type LiveRunNowPlayingEvents = {
+  onRemotePlay: () => void;
+  onRemotePause: () => void;
+  onRemoteStop: () => void;
+};
+
+// Hand-written rather than extending expo-modules-core's NativeModule<T>: that
+// generic is erased in its public .d.ts (the alias body references the bare
+// `EventsMap` instead of the `TEventsMap` type param), so `addListener` below
+// would otherwise type as untyped/non-existent regardless of what's passed.
+type LiveRunNowPlayingModule = {
+  activate(): Promise<void>;
+  updateNowPlaying(title: string, artist: string, paused: boolean): Promise<void>;
+  setPaused(paused: boolean): Promise<void>;
+  deactivate(): Promise<void>;
+  addListener<EventName extends keyof LiveRunNowPlayingEvents>(
+    eventName: EventName,
+    listener: LiveRunNowPlayingEvents[EventName],
+  ): { remove: () => void };
+};
+
+/** Lazily resolved + memoized; `null` on Android or if the native module isn't linked. */
+let iosModule: LiveRunNowPlayingModule | null | undefined;
+function nowPlayingModule(): LiveRunNowPlayingModule | null {
+  if (iosModule === undefined) {
+    iosModule = IS_IOS
+      ? requireOptionalNativeModule<LiveRunNowPlayingModule>('LiveRunNowPlaying')
+      : null;
+  }
+  return iosModule;
+}
+
+let iosListenersReady = false;
+/** Forwards the native module's remote-command events into the same listener sets Android uses. */
+function ensureIosListeners(mod: LiveRunNowPlayingModule) {
+  if (iosListenersReady) return;
+  iosListenersReady = true;
+  mod.addListener('onRemotePlay', () => resumeListeners.forEach((cb) => cb()));
+  mod.addListener('onRemotePause', () => pauseListeners.forEach((cb) => cb()));
+  mod.addListener('onRemoteStop', () => stopListeners.forEach((cb) => cb()));
 }
 
 const SILENT_TRACK_ID = 'zoneruns-live-run';
@@ -143,62 +195,92 @@ export async function showLiveRunNotification(
   stats: LiveRunStats,
   opts?: { paused?: boolean; justCaptured?: boolean },
 ): Promise<void> {
-  if (!IS_ANDROID) return;
+  if (IS_ANDROID) {
+    try {
+      await ensureSetup();
+      const { default: TrackPlayer, RepeatMode } = trackPlayerModule();
 
-  try {
-    await ensureSetup();
-    const { default: TrackPlayer, RepeatMode } = trackPlayerModule();
+      if (!trackLoaded) {
+        trackLoaded = true;
+        await TrackPlayer.add({
+          id: SILENT_TRACK_ID,
+          // Silent loop that only exists to keep the media session alive —
+          // the metadata below is the actual user-facing content.
+          url: require('../assets/audio/silence.wav'),
+          artwork: require('../assets/images/icon.png'),
+          title: 'ZoneRuns',
+          artist: 'Run in progress',
+          isLiveStream: true,
+        });
+        await TrackPlayer.setRepeatMode(RepeatMode.Track);
+        await TrackPlayer.play();
+      }
 
-    if (!trackLoaded) {
-      trackLoaded = true;
-      await TrackPlayer.add({
-        id: SILENT_TRACK_ID,
-        // Silent loop that only exists to keep the media session alive —
-        // the metadata below is the actual user-facing content.
-        url: require('../assets/audio/silence.wav'),
-        artwork: require('../assets/images/icon.png'),
-        title: 'ZoneRuns',
-        artist: 'Run in progress',
+      // Lightweight metadata overlay — unlike updateMetadataForTrack(), this
+      // doesn't replace the underlying player item, so it doesn't trigger a
+      // brief reload/buffering transition on every tick.
+      await TrackPlayer.updateNowPlayingMetadata({
+        title: buildTitle(stats, opts),
+        artist: `${stats.distanceLabel} km   ·   ${stats.paceLabel} min/km`,
         isLiveStream: true,
       });
-      await TrackPlayer.setRepeatMode(RepeatMode.Track);
-      await TrackPlayer.play();
+    } catch (e) {
+      console.warn('showLiveRunNotification exception:', e);
     }
+    return;
+  }
 
-    // Lightweight metadata overlay — unlike updateMetadataForTrack(), this
-    // doesn't replace the underlying player item, so it doesn't trigger a
-    // brief reload/buffering transition on every tick.
-    await TrackPlayer.updateNowPlayingMetadata({
-      title: buildTitle(stats, opts),
-      artist: `${stats.distanceLabel} km   ·   ${stats.paceLabel} min/km`,
-      isLiveStream: true,
-    });
+  try {
+    const mod = nowPlayingModule();
+    if (!mod) return;
+
+    ensureIosListeners(mod);
+    await mod.activate();
+    await mod.updateNowPlaying(
+      buildTitle(stats, opts),
+      `${stats.distanceLabel} km   ·   ${stats.paceLabel} min/km`,
+      !!opts?.paused,
+    );
   } catch (e) {
-    console.warn('showLiveRunNotification exception:', e);
+    console.warn('showLiveRunNotification (iOS) exception:', e);
   }
 }
 
 /** Keeps the lock-screen Play/Pause icon in sync when pause/resume happens from in-app UI. */
 export async function setLiveRunPlaybackState(paused: boolean): Promise<void> {
-  if (!IS_ANDROID) return;
+  if (IS_ANDROID) {
+    try {
+      if (!trackLoaded) return;
+      const { default: TrackPlayer } = trackPlayerModule();
+      await (paused ? TrackPlayer.pause() : TrackPlayer.play());
+    } catch (e) {
+      console.warn('setLiveRunPlaybackState exception:', e);
+    }
+    return;
+  }
 
   try {
-    if (!trackLoaded) return;
-    const { default: TrackPlayer } = trackPlayerModule();
-    await (paused ? TrackPlayer.pause() : TrackPlayer.play());
+    await nowPlayingModule()?.setPaused(paused);
   } catch (e) {
-    console.warn('setLiveRunPlaybackState exception:', e);
+    console.warn('setLiveRunPlaybackState (iOS) exception:', e);
   }
 }
 
 export async function dismissLiveRunNotification(): Promise<void> {
-  if (!IS_ANDROID) return;
+  if (IS_ANDROID) {
+    try {
+      trackLoaded = false;
+      const { default: TrackPlayer } = trackPlayerModule();
+      await TrackPlayer.reset();
+    } catch (e) {
+      console.warn('dismissLiveRunNotification exception:', e);
+    }
+    return;
+  }
 
   try {
-    trackLoaded = false;
-    const { default: TrackPlayer } = trackPlayerModule();
-    await TrackPlayer.reset();
+    await nowPlayingModule()?.deactivate();
   } catch (e) {
-    console.warn('dismissLiveRunNotification exception:', e);
+    console.warn('dismissLiveRunNotification (iOS) exception:', e);
   }
 }
