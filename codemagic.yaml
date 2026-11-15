@@ -39,7 +39,7 @@ workflows:
           cd react/Runner
           xcode-project build-ipa \
             --workspace "$(ls -d ios/*.xcworkspace)" \
-            --scheme Runner
+            --scheme ZoneRuns
     artifacts:
       - react/Runner/build/ios/ipa/*.ipa
     publishing:
