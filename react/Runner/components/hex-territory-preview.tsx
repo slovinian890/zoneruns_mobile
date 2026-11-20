@@ -56,7 +56,7 @@ function hexPoints(cx: number, cy: number, r: number): string {
 }
 
 export function HexTerritoryPreview({ route, trailColor, height = 160, seed, claimed }: HexTerritoryPreviewProps) {
-  const coords = route.coordinates ?? [];
+  const coords = useMemo(() => route.coordinates ?? [], [route.coordinates]);
   const lineColor = trailColor || route.trailColor || AuroraColors.primary;
   const rngSeed = hashString(seed ?? JSON.stringify(coords.slice(0, 3)));
   // Same closed-loop rule the server applies when claiming territory (see

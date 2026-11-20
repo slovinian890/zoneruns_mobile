@@ -224,7 +224,7 @@ export default function PostRunModal({
 
             {/* Caption input */}
             <View style={styles.inputContainer}>
-              <ThemedText style={styles.label}>What's on your mind?</ThemedText>
+              <ThemedText style={styles.label}>What&apos;s on your mind?</ThemedText>
               <TextInput
                 style={[
                   styles.input,

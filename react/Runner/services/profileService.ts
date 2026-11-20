@@ -1,5 +1,6 @@
 import { supabase, Profile, ProfileSettings, UpdateProfileInput, UpdateProfileSettingsInput } from './supabase';
 import { getCurrentUser } from './authService';
+import { File } from 'expo-file-system';
 
 // ============================================
 // PROFILE OPERATIONS
@@ -229,6 +230,13 @@ export const updateProfileSettings = async (
 
 /**
  * Upload a profile avatar
+ *
+ * Uploads an ArrayBuffer (via expo-file-system's File#arrayBuffer) rather
+ * than a fetch()-sourced Blob — supabase-js's storage upload over a React
+ * Native Blob is a known failure mode on Android (throws "Network request
+ * failed"), since RN's Blob isn't a real spec Blob and doesn't survive
+ * being re-sent by storage-js's own fetch call. Same fix as
+ * socialService.ts's uploadPostImage.
  */
 export const uploadAvatar = async (
   fileUri: string,
@@ -244,14 +252,12 @@ export const uploadAvatar = async (
     const fileExt = mimeType.split('/')[1] || 'jpg';
     const fileName = `${user.id}/avatar.${fileExt}`;
 
-    // Read file and convert to blob
-    const response = await fetch(fileUri);
-    const blob = await response.blob();
+    const arrayBuffer = await new File(fileUri).arrayBuffer();
 
     // Upload to Supabase Storage
     const { error: uploadError } = await supabase.storage
       .from('avatars')
-      .upload(fileName, blob, {
+      .upload(fileName, arrayBuffer, {
         upsert: true,
         contentType: mimeType,
       });
