@@ -18,9 +18,9 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { getCurrentProfile, updateProfile, uploadAvatar } from '@/services/profileService';
 import { getCurrentUserStats } from '@/services/statsService';
 import { signOut } from '@/services/authService';
-import { Profile, UserStats, MyHero } from '@/services/supabase';
+import { UserStats, MyHero } from '@/services/supabase';
 import { TRAIL_COLORS, getTrailColor, setTrailColor as shraniBarvoSledi, DEFAULT_TRAIL_COLOR } from '@/services/trailColorService';
-import { getMyTerritoryStats, formatArea } from '@/services/territoryService';
+import { getMyTerritoryStats } from '@/services/territoryService';
 import { getMyHeroes } from '@/services/heroesService';
 import { HeroSprite } from '@/components/hero-sprite';
 
@@ -36,7 +36,7 @@ export default function ProfileScreen() {
   const [nalaganje, setNalaganje] = useState(true);
   const [shranjevanje, setShranjevanje] = useState(false);
   const [izbranaBarvaSled, setIzbranaBarvaSled] = useState(DEFAULT_TRAIL_COLOR);
-  const [povrsinaOzemlja, setPovrsinaOzemlja] = useState(0);
+  const [steviloPolj, setSteviloPolj] = useState(0);
   const [aktivniJunak, setAktivniJunak] = useState<MyHero | null>(null);
   const usmerjevalnik = useRouter();
 
@@ -65,7 +65,7 @@ export default function ProfileScreen() {
       naloziProfil();
       naloziStatistiko();
       getTrailColor().then(setIzbranaBarvaSled);
-      getMyTerritoryStats().then((s) => setPovrsinaOzemlja(s.areaM2));
+      getMyTerritoryStats().then((s) => setSteviloPolj(s.hexCount));
       getMyHeroes().then((junaki) => setAktivniJunak(junaki.find((j) => j.is_active) ?? null));
     }, [])
   );
@@ -133,6 +133,7 @@ export default function ProfileScreen() {
         setShranjevanje(false);
       }
     } catch (napaka) {
+      console.error('Error picking image:', napaka);
       Alert.alert('Error', 'Failed to pick image');
       setShranjevanje(false);
     }
@@ -164,6 +165,7 @@ export default function ProfileScreen() {
         setShranjevanje(false);
       }
     } catch (napaka) {
+      console.error('Error taking picture:', napaka);
       Alert.alert('Error', 'Failed to take picture');
       setShranjevanje(false);
     }
@@ -379,8 +381,8 @@ export default function ProfileScreen() {
             <View style={styles.territoryCard}>
               <IconSymbol name="hexagon.fill" size={22} color={AuroraColors.primary} />
               <View style={{ flex: 1 }}>
-                <ThemedText type="h3" variant="primary">{formatArea(povrsinaOzemlja)}</ThemedText>
-                <ThemedText type="bodySmall" variant="muted">Territory captured</ThemedText>
+                <ThemedText type="h3" variant="primary">{steviloPolj.toLocaleString()}</ThemedText>
+                <ThemedText type="bodySmall" variant="muted">Tiles captured</ThemedText>
               </View>
             </View>
           </GlassCard>

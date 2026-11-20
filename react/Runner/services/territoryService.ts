@@ -77,7 +77,7 @@ export async function getTerritoriesInBounds(
         user_id: row.user_id,
         username: row.username,
         display_name: row.display_name,
-        trail_color: row.trail_color ?? '#C9D54A',
+        trail_color: row.trail_color ?? '#4FC3F7',
         area_m2: Number(row.area_m2) || 0,
         geojson: JSON.parse(row.geojson),
       }));
@@ -87,14 +87,14 @@ export async function getTerritoriesInBounds(
   }
 }
 
-/** Current user's total claimed area, for the Profile stats grid. */
-export async function getMyTerritoryStats(): Promise<{ areaM2: number }> {
+/** Current user's total claimed area + hex tile count, for the Profile stats grid. */
+export async function getMyTerritoryStats(): Promise<{ areaM2: number; hexCount: number }> {
   try {
     const { data, error } = await supabase.rpc('get_my_territory_stats');
-    if (error || !data) return { areaM2: 0 };
-    return { areaM2: Number((data as any).area_m2) || 0 };
+    if (error || !data) return { areaM2: 0, hexCount: 0 };
+    return { areaM2: Number((data as any).area_m2) || 0, hexCount: Number((data as any).hex_count) || 0 };
   } catch {
-    return { areaM2: 0 };
+    return { areaM2: 0, hexCount: 0 };
   }
 }
 

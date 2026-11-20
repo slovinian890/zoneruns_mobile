@@ -15,25 +15,23 @@ import { BlurView } from 'expo-blur';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useAmbientVariant } from '@/components/ambient-background';
-import { Spacing, AuroraColors, Shadows } from '@/constants/theme';
+import { Spacing, AuroraColors, Shadows, Colors } from '@/constants/theme';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { GradientButton } from '@/components/ui/gradient-button';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { StatBlock } from '@/components/ui/stat-block';
 import { TAB_BAR_HEIGHT } from '@/components/ui/floating-tab-bar';
 import RunningMap from '@/components/running-map';
-import TerritoryMap from '@/components/territory-map';
 import HexBattleMap from '@/components/hex-battle-map';
 import HexActionModal from '@/components/hex-action-modal';
 import BountyAmountModal from '@/components/bounty-amount-modal';
 import { createRun, secondsToInterval, calculatePace } from '@/services/runsService';
 import { updateUserStatsAfterRun, checkAndAwardAchievements, getCurrentUserStats } from '@/services/statsService';
 import { getCurrentUser } from '@/services/authService';
-import { Run, RouteData, HexCell, GroupTerritoryFeature, ClaimTerritoryResult, MyActiveGroup } from '@/services/supabase';
-import { getGroupTerritoriesInBounds, getMyGroups, getMyActiveGroup } from '@/services/groupsService';
+import { Run, RouteData, HexCell, ClaimTerritoryResult, MyActiveGroup } from '@/services/supabase';
+import { getMyActiveGroup } from '@/services/groupsService';
 import PostRunModal from '@/components/post-run-modal';
 import { getTrailColor, DEFAULT_TRAIL_COLOR } from '@/services/trailColorService';
-import { Colors } from '@/constants/theme';
 import {
   getHexesInBounds,
   claimTerritoryFromRun,
@@ -136,7 +134,7 @@ export default function HomeScreen() {
   const [razdalja, setRazdalja] = useState(0);
   const [trajanje, setTrajanje] = useState(0);
   const [zacetniCas, setZacetniCas] = useState<number | null>(null);
-  const [pot, setPot] = useState<Array<{ latitude: number; longitude: number }>>([]);
+  const [pot, setPot] = useState<{ latitude: number; longitude: number }[]>([]);
   const [shranjevanje, setShranjevanje] = useState(false);
   const [pavzirano, setPavzirano] = useState(false);
   // Count of unique hex cells the GPS trail has already crossed this run —
@@ -195,12 +193,15 @@ export default function HomeScreen() {
   const [barvaSled, setBarvaSled] = useState<string>(DEFAULT_TRAIL_COLOR);
 
   // ── Competition state ──
+  // Same hex grid backs both the Solo and Groups views on the Compete screen
+  // — get_hexes_in_bounds already carries each cell's clan ownership (see
+  // migrations/017_clan_hex_warfare.sql), so there's no separate
+  // group-territory fetch anymore; HexBattleMap's viewMode just changes how
+  // it's colored (see hex-battle-map.tsx).
   const [hexCelice, setHexCelice] = useState<HexCell[]>([]);
-  const [teritorijiSkupin, setTeritorijiSkupin] = useState<GroupTerritoryFeature[]>([]);
-  const [mojaPovrsina, setMojaPovrsina] = useState(0);
+  const [mojihPolj, setMojihPolj] = useState(0);
   const [uporabnikId, setUporabnikId] = useState<string>('');
   const [pogledOzemlja, setPogledOzemlja] = useState<'posamezniki' | 'skupine'>('posamezniki');
-  const [mojeSkupineId, setMojeSkupineId] = useState<string[]>([]);
   // The clan (if any) your runs currently claim/heal hexes for — see
   // set_active_group / migrations/017_clan_hex_warfare.sql. Null = solo.
   const [mojKlan, setMojKlan] = useState<MyActiveGroup | null>(null);
@@ -652,22 +653,17 @@ export default function HomeScreen() {
     nadaljujTekRef.current = nadaljujTek;
   }, [ustaviTek, prekiniTek, nadaljujTek]);
 
-  // ── Load territories for the current map view ──
-  // Remembers the last bounds so preklopiPogledOzemlja can reload data for the
-  // new mode (solo/groups) immediately, without waiting for the user to pan
-  // the map again.
+  // ── Load hexes for the current map view ──
+  // Remembers the last bounds so other actions (fortify/bounty, switching
+  // Solo/Groups) can reload the same viewport without waiting for the user
+  // to pan the map again.
   const naloziOzemljaVOkviru = useCallback(
     async (minLat: number, maxLat: number, minLng: number, maxLng: number) => {
       zadnjiOkvirRef.current = { minLat, maxLat, minLng, maxLng };
-      if (pogledOzemlja === 'skupine') {
-        const podatki = await getGroupTerritoriesInBounds(minLat, minLng, maxLat, maxLng);
-        setTeritorijiSkupin(podatki);
-      } else {
-        const podatki = await getHexesInBounds(minLat, minLng, maxLat, maxLng);
-        setHexCelice(podatki);
-      }
+      const podatki = await getHexesInBounds(minLat, minLng, maxLat, maxLng);
+      setHexCelice(podatki);
     },
-    [pogledOzemlja],
+    [],
   );
 
   // Reload hexes for the current bounds — called after fortify/bounty, since
@@ -684,20 +680,13 @@ export default function HomeScreen() {
     if (rezultat.success && rezultat.stats) setMojiKovanci(rezultat.stats.coins ?? 0);
   }, []);
 
-  // ── Toggle between "solo" and "groups" view on the territory map ──
-  const preklopiPogledOzemlja = useCallback(
-    (novPogled: 'posamezniki' | 'skupine') => {
-      setPogledOzemlja(novPogled);
-      const okvir = zadnjiOkvirRef.current;
-      if (!okvir) return;
-      if (novPogled === 'skupine') {
-        getGroupTerritoriesInBounds(okvir.minLat, okvir.minLng, okvir.maxLat, okvir.maxLng).then(setTeritorijiSkupin);
-      } else {
-        getHexesInBounds(okvir.minLat, okvir.minLng, okvir.maxLat, okvir.maxLng).then(setHexCelice);
-      }
-    },
-    [],
-  );
+  // ── Toggle between "solo" and "groups" view on the hex battle map ──
+  // Both views share the same already-loaded hexCelice — only how
+  // HexBattleMap colors them changes (see its viewMode prop) — so this is
+  // just a state flip, no refetch needed.
+  const preklopiPogledOzemlja = useCallback((novPogled: 'posamezniki' | 'skupine') => {
+    setPogledOzemlja(novPogled);
+  }, []);
 
   // ── Enter competition mode ──
   const obdelajTekmovanje = useCallback(async () => {
@@ -706,26 +695,16 @@ export default function HomeScreen() {
     setNacinIzbire(false);
     setIzbranaPoljaNagrade([]);
 
-    const [{ areaM2 }, rezultatSkupin] = await Promise.all([getMyTerritoryStats(), getMyGroups()]);
-    setMojaPovrsina(areaM2);
-    setMojeSkupineId(rezultatSkupin.success ? (rezultatSkupin.groups ?? []).map((s) => s.id) : []);
+    const { hexCount } = await getMyTerritoryStats();
+    setMojihPolj(hexCount);
     void osveziMojeKovance();
 
     if (lokacija) {
       const { latitude: la, longitude: lo } = lokacija.coords;
       const zamik = 0.01; // ~1km bounds on entry, until the map reports its exact view
-      const okvir = { minLat: la - zamik, maxLat: la + zamik, minLng: lo - zamik, maxLng: lo + zamik };
-      // Fetches hexes directly rather than going through naloziOzemljaVOkviru —
-      // that callback closes over whatever pogledOzemlja *was* on the last
-      // render, which can still be 'skupine' here (the setPogledOzemlja above
-      // hasn't committed yet), so it would briefly fetch group territories
-      // into the wrong state slot instead of the hexes just claimed by the
-      // run the player likely just finished.
-      zadnjiOkvirRef.current = okvir;
-      const podatki = await getHexesInBounds(okvir.minLat, okvir.minLng, okvir.maxLat, okvir.maxLng);
-      setHexCelice(podatki);
+      await naloziOzemljaVOkviru(la - zamik, la + zamik, lo - zamik, lo + zamik);
     }
-  }, [lokacija, osveziMojeKovance]);
+  }, [lokacija, osveziMojeKovance, naloziOzemljaVOkviru]);
 
   // ── Hex tap on the battle map ──
   const obdelajDotikPolja = useCallback(
@@ -882,8 +861,8 @@ export default function HomeScreen() {
           <View style={styles.tileBadge}>
             <StatBlock
               stats={[
-                { value: formatArea(mojaPovrsina), label: 'your territory' },
-                ...(pogledOzemlja === 'posamezniki' ? [{ value: String(mojiKovanci), label: 'coins' }] : []),
+                { value: mojihPolj.toLocaleString(), label: 'your territory' },
+                { value: String(mojiKovanci), label: 'coins' },
               ]}
             />
             <View style={styles.colorDotRow}>
@@ -909,55 +888,34 @@ export default function HomeScreen() {
             />
           </View>
 
-          {pogledOzemlja === 'posamezniki' && (
-            <TouchableOpacity
-              onPress={preklopiNacinIzbire}
-              style={[styles.ghostToggle, nacinIzbire ? styles.ghostToggleActive : styles.ghostToggleInactive, { marginTop: Spacing.sm, marginBottom: 0 }]}>
-              <IconSymbol name="bounty.fill" size={14} color={nacinIzbire ? AuroraColors.onPrimary : AuroraColors.textMuted} />
-              <ThemedText
-                type="caption"
-                lightColor={nacinIzbire ? AuroraColors.onPrimary : undefined}
-                darkColor={nacinIzbire ? AuroraColors.onPrimary : undefined}
-                variant={nacinIzbire ? undefined : 'muted'}>
-                {nacinIzbire ? `Selecting hexes for bounty (${izbranaPoljaNagrade.length})` : 'Select hexes for bounty'}
-              </ThemedText>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            onPress={preklopiNacinIzbire}
+            style={[styles.ghostToggle, nacinIzbire ? styles.ghostToggleActive : styles.ghostToggleInactive, { marginTop: Spacing.sm, marginBottom: 0 }]}>
+            <IconSymbol name="bounty.fill" size={14} color={nacinIzbire ? AuroraColors.onPrimary : AuroraColors.textMuted} />
+            <ThemedText
+              type="caption"
+              lightColor={nacinIzbire ? AuroraColors.onPrimary : undefined}
+              darkColor={nacinIzbire ? AuroraColors.onPrimary : undefined}
+              variant={nacinIzbire ? undefined : 'muted'}>
+              {nacinIzbire ? `Selecting hexes for bounty (${izbranaPoljaNagrade.length})` : 'Select hexes for bounty'}
+            </ThemedText>
+          </TouchableOpacity>
         </View>
 
-        {pogledOzemlja === 'skupine' ? (
-          <TerritoryMap
-            latitude={latitude}
-            longitude={longitude}
-            colors={Colors.dark}
-            trailColor={barvaSled}
-            territories={teritorijiSkupin.map((t) => ({
-              user_id: t.group_id,
-              username: t.name,
-              display_name: null,
-              trail_color: t.color,
-              area_m2: t.area_m2,
-              geojson: t.geojson,
-            }))}
-            highlightIds={mojeSkupineId}
-            mode="group"
-            onBoundsChanged={naloziOzemljaVOkviru}
-          />
-        ) : (
-          <HexBattleMap
-            latitude={latitude}
-            longitude={longitude}
-            colors={Colors.dark}
-            myUserId={uporabnikId}
-            myGroupId={mojKlan?.group_id ?? null}
-            cells={hexCelice}
-            selected={izbranaPoljaNagrade}
-            onBoundsChanged={naloziOzemljaVOkviru}
-            onHexTap={obdelajDotikPolja}
-          />
-        )}
+        <HexBattleMap
+          latitude={latitude}
+          longitude={longitude}
+          colors={Colors.dark}
+          myUserId={uporabnikId}
+          myGroupId={mojKlan?.group_id ?? null}
+          viewMode={pogledOzemlja === 'skupine' ? 'group' : 'individual'}
+          cells={hexCelice}
+          selected={izbranaPoljaNagrade}
+          onBoundsChanged={naloziOzemljaVOkviru}
+          onHexTap={obdelajDotikPolja}
+        />
 
-        {pogledOzemlja === 'posamezniki' && nacinIzbire && izbranaPoljaNagrade.length > 0 && (
+        {nacinIzbire && izbranaPoljaNagrade.length > 0 && (
           <View style={[styles.selectionBar, { paddingBottom: insets.bottom + Spacing.md }]}>
             <BlurView intensity={24} tint="dark" style={StyleSheet.absoluteFillObject} />
             <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, styles.headerTint]} />

@@ -10,6 +10,12 @@
  * hexes render in the clan's color with a dashed outline instead of the
  * owner's trail color, and "mine" highlighting follows whichever side
  * (your active clan, or yourself) the viewer is currently playing as.
+ *
+ * `viewMode` drives the same underlying grid two different ways from the
+ * Compete screen's Solo/Groups toggle: 'individual' colors every claimed hex
+ * by its owner (clan or solo); 'group' treats only clan-owned hexes as
+ * "claimed" — solo-owned hexes fall back to the neutral mesh styling so the
+ * board reads as groups fighting over tiles, not individual noise.
  */
 
 import { useRef, useEffect, useCallback, useMemo } from 'react';
@@ -26,6 +32,8 @@ export interface HexBattleMapProps {
   myUserId: string;
   /** The clan the viewer currently represents, if any — drives "mine" highlighting for clan hexes. */
   myGroupId: string | null;
+  /** 'individual' (default): color every claimed hex by its owner. 'group': only clan-owned hexes read as claimed — solo-owned hexes render as neutral mesh. */
+  viewMode?: 'individual' | 'group';
   cells: HexCell[];
   /** Hexes currently queued for a multi-hex bounty placement — drawn with a bright dashed outline. */
   selected: HexCellId[];
@@ -90,14 +98,23 @@ var dot=L.marker([${lat},${lng}],{icon:dotIcon}).addTo(map);
 var hexLayer=L.layerGroup().addTo(map);
 var myIds=[];
 var myGroupId=null;
+var viewMode='individual';
 var selectedSet={};
 var layersByKey={};
 var propsByKey={};
 var currentZoom=map.getZoom();
 
+// In 'group' view only clan-owned hexes count as "claimed" — a solo-owned
+// hex falls back to the same neutral styling as a truly unclaimed one, so
+// the board reads as groups fighting over tiles instead of individual noise.
+function isOwned(p){
+  return viewMode==='group' ? !!p.groupId : !!p.userId;
+}
+
 // Mirrors territoryService.ts's isHexAlly() — "is this mine to heal" from
 // whichever side (active clan, or myself) I'm currently playing as.
 function isAlly(p){
+  if(viewMode==='group') return !!(myGroupId && p.groupId && p.groupId===myGroupId);
   if(!p.userId) return false;
   if(myGroupId && p.groupId) return p.groupId === myGroupId;
   if(!myGroupId && !p.groupId) return myIds.indexOf(p.userId)!==-1;
@@ -107,9 +124,9 @@ function isAlly(p){
 
 function styleForCell(p){
   if(selectedSet[p.key]){
-    return{color:'#FFFFFF',weight:3,opacity:1,dashArray:'4,3',fillColor:p.trailColor,fillOpacity:p.userId?0.5:0.2};
+    return{color:'#FFFFFF',weight:3,opacity:1,dashArray:'4,3',fillColor:p.trailColor,fillOpacity:isOwned(p)?0.5:0.2};
   }
-  if(!p.userId){
+  if(!isOwned(p)){
     return{color:'rgba(255,255,255,0.22)',weight:1,opacity:0.4,fillColor:'#6B7280',fillOpacity:0.10};
   }
   // Darker fill = higher defense level (1..10) — strength reads at a glance
@@ -133,7 +150,7 @@ function styleForCell(p){
 // level instead. Never both at once on the same hex.
 function tooltipContent(p){
   if(p.bountyTotal > 0) return '\\u{1F4B0} ' + p.bountyTotal;
-  if(p.userId && currentZoom >= LEVEL_LABEL_ZOOM) return String(p.level||1);
+  if(isOwned(p) && currentZoom >= LEVEL_LABEL_ZOOM) return String(p.level||1);
   return null;
 }
 
@@ -206,6 +223,7 @@ map.on('moveend',function(){
 function msg(d){
   if(d.type==='loc'){dot.setLatLng([d.lat,d.lng])}
   if(d.type==='me'){myIds=d.ids||[]; myGroupId=d.groupId||null; redrawStyles();}
+  if(d.type==='viewMode'){viewMode=d.mode||'individual'; redrawStyles(); refreshTooltips();}
   if(d.type==='cells'){draw(d.fc)}
   if(d.type==='selected'){
     selectedSet={};
@@ -233,6 +251,7 @@ export default function HexBattleMap({
   colors,
   myUserId,
   myGroupId,
+  viewMode = 'individual',
   cells,
   selected,
   onBoundsChanged,
@@ -266,6 +285,10 @@ export default function HexBattleMap({
   useEffect(() => {
     send({ type: 'me', ids: myUserId ? [myUserId] : [], groupId: myGroupId });
   }, [myUserId, myGroupId, send]);
+
+  useEffect(() => {
+    send({ type: 'viewMode', mode: viewMode });
+  }, [viewMode, send]);
 
   const cellsByKey = useMemo(() => {
     const map = new Map<string, HexCell>();
@@ -312,6 +335,7 @@ export default function HexBattleMap({
           isReady.current = true;
           send({ type: 'loc', lat: latitude, lng: longitude });
           send({ type: 'me', ids: myUserId ? [myUserId] : [], groupId: myGroupId });
+          send({ type: 'viewMode', mode: viewMode });
           send({ type: 'cells', fc: featureCollection });
           send({ type: 'selected', keys: selectedKeys });
         }
@@ -324,7 +348,7 @@ export default function HexBattleMap({
         }
       } catch {}
     },
-    [latitude, longitude, myUserId, myGroupId, featureCollection, selectedKeys, cellsByKey, send],
+    [latitude, longitude, myUserId, myGroupId, viewMode, featureCollection, selectedKeys, cellsByKey, send],
   );
 
   return (
