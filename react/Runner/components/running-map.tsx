@@ -8,7 +8,7 @@ export interface RunningMapProps {
   latitude: number;
   longitude: number;
   colors: typeof Colors.light;
-  route?: Array<{ latitude: number; longitude: number }>;
+  route?: { latitude: number; longitude: number }[];
   isRunning?: boolean;
   trailColor?: string; // hex color for the route trail
 }
@@ -291,7 +291,7 @@ const generateLeafletHTML = (lat: number, lng: number, isDark: boolean, trailCol
 </html>`;
 };
 
-export default function RunningMap({ latitude, longitude, colors, route = [], isRunning = false, trailColor = '#C9D54A' }: RunningMapProps) {
+export default function RunningMap({ latitude, longitude, colors, route = [], isRunning = false, trailColor = '#4FC3F7' }: RunningMapProps) {
   const webViewRef = useRef<WebView>(null);
   const isReadyRef = useRef(false);
   const wasRunningRef = useRef(isRunning);
@@ -388,7 +388,9 @@ export default function RunningMap({ latitude, longitude, colors, route = [], is
         sendMessage({ type: 'setRunning', running: isRunning });
         sendMessage({ type: 'setTrailColor', color: trailColor });
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('Error handling WebView message:', e);
+    }
   }, [latitude, longitude, route, isRunning, trailColor, sendMessage]);
 
   return (

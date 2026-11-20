@@ -25,7 +25,7 @@
       "predictiveBackGestureEnabled": false,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundColor": "#141A0C",
+        "backgroundColor": "#112544",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "permissions": [
@@ -67,13 +67,13 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 220,
           "resizeMode": "contain",
-          "backgroundColor": "#141A0C"
+          "backgroundColor": "#112544"
         }
       ],
       [
         "expo-notifications",
         {
-          "color": "#D9603B"
+          "color": "#FF5252"
         }
       ]
     ],

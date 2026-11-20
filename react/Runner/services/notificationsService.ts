@@ -64,7 +64,7 @@ async function ensureAndroidChannel(): Promise<void> {
     name: 'Territory attacks',
     importance: Notifications.AndroidImportance.MAX,
     vibrationPattern: [0, 250, 250, 250],
-    lightColor: '#D9603B',
+    lightColor: '#FF5252',
     sound: 'default',
   });
 }

@@ -1,6 +1,11 @@
 /**
- * Grove Design System — Premium Dark
- * Deep, almost-black olive glass with a zesty chartreuse brand accent.
+ * Absolute Zero Design System — Glacial
+ * Deep ink-teal glass with a muted glacier-teal brand accent (not a raw
+ * electric cyan — full-saturation cyan across large surfaces reads as glare,
+ * not premium) and a softened signal-red rival/danger color. Strategy,
+ * focus, precision, without fatiguing the eye on a screen you look at mid-run.
+ * Every token below keeps its old name so nothing downstream has to change,
+ * only what it resolves to.
  * Built dark-first: the app always renders this palette regardless of the
  * device's system theme. Every color in the app should come from this file —
  * nothing outside it should hold a literal hex/rgb value.
@@ -13,49 +18,57 @@ export const AuroraColors = {
   // bg: the deepest layer, painted once by <AmbientBackground/> behind the
   // whole app. bgElevated: sheets, modals, anything that should read as
   // "above" the ambient background rather than part of it.
-  bg: '#0D1108',
-  bgElevated: '#141A0C',
-  mapBase: '#10140B',
+  bg: '#0A1720',
+  bgElevated: '#122733',
+  mapBase: '#0B1B22',
 
   // ── Surfaces ──
   // surface: translucent glass (pair with expo-blur) for GlassCard.
   // surfaceSolid: an opaque fallback for places blur isn't worth the cost.
-  surface: 'rgba(28, 36, 18, 0.72)',
-  surfaceSolid: '#1A2111',
-  border: 'rgba(201, 213, 74, 0.10)',
-  highlight: 'rgba(255, 255, 255, 0.06)', // 1px top edge on glass cards
-  scrim: 'rgba(13, 17, 8, 0.78)', // full-screen modal backdrop
+  surface: 'rgba(42, 74, 86, 0.48)',
+  surfaceSolid: '#1B2E38',
+  border: 'rgba(158, 196, 209, 0.12)',
+  highlight: 'rgba(255, 255, 255, 0.08)', // 1px top edge on glass cards
+  scrim: 'rgba(5, 10, 16, 0.82)', // full-screen modal backdrop
 
   // ── Brand ──
-  primary: '#C9D54A',
-  primaryPressed: '#B3BE3A',
+  // A glacier teal, not a raw electric cyan — desaturated and hue-shifted a
+  // touch toward green so a full-bleed fill (a button, a selected pill)
+  // reads as polished stone, not an LED.
+  primary: '#4DB8C7',
+  primaryPressed: '#276B7A',
+  // Spent in exactly one place: a press-triggered spark, never a resting
+  // fill. The one warm note against an otherwise all-cool palette.
+  neon: '#F4FF3D',
   // Soft tinted-primary fill for icon badges/rings (EmptyState, achievements) —
   // primary at low opacity, named so it isn't re-derived as a one-off rgba() string.
-  primarySoft: 'rgba(201, 213, 74, 0.12)',
-  // Chartreuse/amber are both light — text/icons drawn on a primary- or
-  // accent-filled surface need a dark foreground to stay readable.
-  onPrimary: '#12160A',
+  primarySoft: 'rgba(77, 184, 199, 0.14)',
+  // Teal is light enough that text/icons on a primary- or accent-filled
+  // surface still need a dark foreground to stay readable.
+  onPrimary: '#0A1720',
 
   // ── Accents ──
   accentAmber: '#E8C23C',
-  accentTerracotta: '#C8572D',
-  accentForest: '#1F4D2E',
+  accentTerracotta: '#AE1F3C',
+  accentForest: '#0F3240',
 
   // ── Text ──
-  text: '#F1F3E6',
-  textMuted: '#9BA28A',
-  textFaint: '#626A55',
+  // A warm-neutral near-white, not a saturated ice blue — easier to read for
+  // more than a glance, the way a matte display is easier than a glossy one.
+  text: '#E7ECEA',
+  textMuted: '#9BB0B8',
+  textFaint: '#5E7480',
 
   // ── Status ──
-  success: '#8FCB5A',
+  success: '#3DBE9B',
   warning: '#E8C23C',
-  danger: '#D9603B',
+  danger: '#F2554F',
 
   // ── Territory zone states (the Compete map) ──
-  zoneMine: '#C9D54A',
-  zoneRival: '#C8572D',
+  zoneMine: '#4DB8C7',
+  zoneRival: '#F2554F',
   zoneContested: '#E8C23C',
-  zoneNeutral: '#4A5240',
+  zoneNeutral: '#17262E',
 
   transparent: 'transparent',
 
@@ -63,11 +76,11 @@ export const AuroraColors = {
   // Older screens were written against these names; repointed to the closest
   // new-palette equivalent so nothing breaks while the whole app reads from
   // the same tokens above. Prefer the names above in new code.
-  background: '#0D1108', // == bg
+  background: '#0A1720', // == bg
   accent: '#E8C23C', // == accentAmber
-  textSecondary: '#9BA28A', // == textMuted
-  forestGreen: '#1F4D2E', // == accentForest
-  leafGreen: '#8BC24A',
+  textSecondary: '#9BB0B8', // == textMuted
+  forestGreen: '#0F3240', // == accentForest
+  leafGreen: '#4DB8C7',
 };
 
 const auroraTheme = {
@@ -210,15 +223,15 @@ export const Shadows = {
   glowPrimary: {
     shadowColor: AuroraColors.primary,
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
     elevation: 8,
   },
   glowDanger: {
     shadowColor: AuroraColors.danger,
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
+    shadowOpacity: 0.26,
+    shadowRadius: 14,
     elevation: 8,
   },
 };

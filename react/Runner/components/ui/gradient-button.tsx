@@ -19,10 +19,10 @@ interface GradientButtonProps {
 }
 
 /**
- * Primary action button for the running flow. Primary variant gets a
- * diagonal brand gradient + colored glow (the app's one signature CTA
- * treatment); outline/danger keep a flat surface with just a border so the
- * glow stays reserved for the single most important action on screen.
+ * Primary action button for the running flow. Primary and danger are both
+ * full-pill, filled with a diagonal gradient + colored glow (Start/Pause and
+ * Stop & save read as equally weighted CTAs); outline keeps a flat surface
+ * with just a border so the glow stays reserved for filled actions.
  */
 export function GradientButton({ label, icon, onPress, variant = 'primary', style, disabled }: GradientButtonProps) {
   const pressed = useSharedValue(0);
@@ -39,13 +39,26 @@ export function GradientButton({ label, icon, onPress, variant = 'primary', styl
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: 1 - pressed.value * 0.04 }],
   }));
+  // A neon spark on the rim, press-in only — the one warm accent against an
+  // otherwise all-cool palette, kept rare so it still reads as a spark.
+  const neonEdgeStyle = useAnimatedStyle(() => ({
+    opacity: pressed.value,
+    transform: [{ scale: 0.97 + pressed.value * 0.035 }],
+  }));
 
   const isPrimary = variant === 'primary';
-  const borderColor = variant === 'danger' ? '#E53935' : AuroraColors.primary;
-  const textColor = variant === 'danger' ? '#E53935' : AuroraColors.primary;
+  const isDanger = variant === 'danger';
+  const isFilled = isPrimary || isDanger;
+  // A light catch at the top-left corner so the fill reads as a dimensional,
+  // brushed surface rather than a flat glowing LED.
+  const gradientHighlight = isDanger ? '#FF9690' : '#8FE1EC';
+  const gradientFrom = isDanger ? AuroraColors.danger : AuroraColors.primary;
+  const gradientTo = isDanger ? AuroraColors.accentTerracotta : AuroraColors.primaryPressed;
+  const foregroundColor = isDanger ? AuroraColors.text : isPrimary ? AuroraColors.onPrimary : AuroraColors.primary;
+  const glow = isDanger ? Shadows.glowDanger : isPrimary ? Shadows.glowPrimary : Shadows.card;
 
   return (
-    <Animated.View style={[animatedStyle, isPrimary ? Shadows.glowPrimary : Shadows.card, style]}>
+    <Animated.View style={[animatedStyle, glow, style]}>
       <Pressable
         onPress={onPress}
         disabled={disabled}
@@ -54,29 +67,28 @@ export function GradientButton({ label, icon, onPress, variant = 'primary', styl
         onPressOut={() => { pressed.value = withTiming(0, { duration: 150 }); }}
         style={[
           styles.base,
-          !isPrimary && { borderWidth: 1.5, borderColor, backgroundColor: AuroraColors.surface },
+          !isFilled && { borderWidth: 1.5, borderColor: AuroraColors.primary, backgroundColor: AuroraColors.surface },
           disabled && styles.disabled,
         ]}>
-        {isPrimary && size.width > 0 && (
+        {isFilled && size.width > 0 && (
           <Svg width={size.width} height={size.height} style={StyleSheet.absoluteFill} pointerEvents="none">
             <Defs>
               <LinearGradient id="btnFill" x1="0%" y1="0%" x2="100%" y2="100%">
-                <Stop offset="0%" stopColor={AuroraColors.primary} />
-                <Stop offset="100%" stopColor={AuroraColors.accent} />
+                <Stop offset="0%" stopColor={gradientHighlight} />
+                <Stop offset="45%" stopColor={gradientFrom} />
+                <Stop offset="100%" stopColor={gradientTo} />
               </LinearGradient>
             </Defs>
             <Rect x={0} y={0} width={size.width} height={size.height} fill="url(#btnFill)" />
           </Svg>
         )}
         <View style={styles.content}>
-          <IconSymbol name={icon} size={20} color={isPrimary ? AuroraColors.onPrimary : textColor} />
-          <ThemedText
-            type="bodyBold"
-            lightColor={isPrimary ? AuroraColors.onPrimary : textColor}
-            darkColor={isPrimary ? AuroraColors.onPrimary : textColor}>
+          <IconSymbol name={icon} size={20} color={foregroundColor} />
+          <ThemedText type="bodyBold" lightColor={foregroundColor} darkColor={foregroundColor}>
             {label}
           </ThemedText>
         </View>
+        <Animated.View pointerEvents="none" style={[styles.neonEdge, neonEdgeStyle]} />
       </Pressable>
     </Animated.View>
   );
@@ -87,7 +99,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: BorderRadius.card,
+    borderRadius: BorderRadius.full,
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.lg,
     overflow: 'hidden',
@@ -99,5 +111,15 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.6,
+  },
+  neonEdge: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: BorderRadius.full,
+    borderWidth: 2,
+    borderColor: AuroraColors.neon,
+    shadowColor: AuroraColors.neon,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 10,
   },
 });

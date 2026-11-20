@@ -4,7 +4,7 @@ const TRAIL_COLOR_KEY = '@runner:trail_color';
 
 // 12 beautiful trail color options
 export const TRAIL_COLORS = [
-  { name: 'Grove Chartreuse', hex: '#C9D54A' },
+  { name: 'Absolute Zero', hex: '#4FC3F7' },
   { name: 'Ocean Blue', hex: '#2196F3' },
   { name: 'Electric Blue', hex: '#00B0FF' },
   { name: 'Teal', hex: '#009688' },
@@ -18,7 +18,7 @@ export const TRAIL_COLORS = [
   { name: 'Red', hex: '#F44336' },
 ];
 
-export const DEFAULT_TRAIL_COLOR = '#C9D54A';
+export const DEFAULT_TRAIL_COLOR = '#4FC3F7';
 
 export const getTrailColor = async (): Promise<string> => {
   try {
